@@ -1,0 +1,16 @@
+{
+	"compatibility_date": "2025-10-08",
+	"main": "src/index.ts",
+	"name": "espace-membre",
+	"upload_source_maps": true,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_id": "678b90d9-5d87-4011-b077-af5a4d0358ee",
+			"database_name": "affbc-production"
+		}
+	],
+	"observability": {
+		"enabled": true
+	}
+}
