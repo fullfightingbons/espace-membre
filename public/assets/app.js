@@ -21,12 +21,21 @@ const API = {
 const SITE_URL = 'https://americanfullfightingbons.fr';
 const TOKEN_KEY = 'affbc_membre_token';
 const TOKEN_EXP_KEY = 'affbc_membre_token_exp';
+const REQUEST_TIMEOUT_MS = 15000;
 
 // ── Session ─────────────────────────────────────────────────────────────
+// localStorage.setItem coerce silencieusement undefined/null en la chaîne
+// "undefined"/"null" : si la réponse de connexion n'a pas la forme attendue
+// (res.data.token manquant), on stockerait sinon un jeton bidon sans jamais
+// lever d'erreur, avec un aller-retour confus vers "session expirée" au
+// premier appel authentifié. On se protège explicitement de ce cas.
+function isPlausibleToken(token) {
+  return typeof token === 'string' && token.length > 0 && token !== 'undefined' && token !== 'null';
+}
 function getToken() {
   const token = localStorage.getItem(TOKEN_KEY);
   const exp = Number(localStorage.getItem(TOKEN_EXP_KEY) || 0);
-  if (!token || !exp || Date.now() >= exp) return null;
+  if (!isPlausibleToken(token) || !exp || Date.now() >= exp) return null;
   return token;
 }
 function setToken(token, expiresAt) {
@@ -46,15 +55,23 @@ async function apiCall(base, path, { method = 'GET', body, auth = true } = {}) {
     if (!token) { goTo('/connexion'); throw new Error('Session absente'); }
     headers.Authorization = `Bearer ${token}`;
   }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let response;
   try {
     response = await fetch(base + path, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
     });
-  } catch {
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error('Le serveur met trop de temps à répondre. Réessayez dans un instant.');
+    }
     throw new Error('Connexion impossible. Vérifiez votre connexion internet et réessayez.');
+  } finally {
+    clearTimeout(timeoutId);
   }
   if (response.status === 401 && auth) {
     clearToken();
@@ -126,10 +143,33 @@ function renderTopbar({ showLogout }) {
 }
 
 function alertBox(type, message) {
-  return el('div', { class: `alert alert-${type}` }, [
-    el('span', {}, type === 'error' ? '⚠️' : '✓'),
+  return el('div', { class: `alert alert-${type}`, role: 'alert', 'aria-live': type === 'error' ? 'assertive' : 'polite' }, [
+    el('span', { 'aria-hidden': 'true' }, type === 'error' ? '⚠️' : '✓'),
     el('span', {}, message),
   ]);
+}
+// Affiche une alerte dans `slot` et y déplace le focus (utile en clavier/lecteur
+// d'écran : sans ça, un échec de soumission passe facilement inaperçu).
+function showAlert(slot, type, message) {
+  slot.innerHTML = '';
+  const box = alertBox(type, message);
+  slot.appendChild(box);
+  box.setAttribute('tabindex', '-1');
+  box.focus();
+  return box;
+}
+// Petite notification transitoire hors formulaire (ex : téléchargement de
+// facture), en remplacement d'un alert() natif bloquant et hors charte.
+function showToast(message, type = 'error') {
+  let root = document.getElementById('toast-root');
+  if (!root) {
+    root = el('div', { id: 'toast-root', class: 'toast-root' });
+    document.body.appendChild(root);
+  }
+  const toast = alertBox(type, message);
+  toast.classList.add('toast');
+  root.appendChild(toast);
+  setTimeout(() => toast.remove(), 6000);
 }
 
 async function handleLogout() {
@@ -162,10 +202,7 @@ function renderConnexion(root) {
             el('label', { for: 'email' }, 'Adresse e-mail'),
             el('input', { id: 'email', name: 'email', type: 'email', autocomplete: 'email', required: true }),
           ]),
-          el('div', { class: 'field' }, [
-            el('label', { for: 'password' }, 'Mot de passe'),
-            el('input', { id: 'password', name: 'password', type: 'password', autocomplete: 'current-password', required: true }),
-          ]),
+          passwordField({ id: 'password', label: 'Mot de passe', autocomplete: 'current-password' }),
           el('button', { class: 'btn btn-primary btn-block', type: 'submit', id: 'submit-btn' }, 'Se connecter'),
         ]),
         el('div', { class: 'auth-links' }, [
@@ -193,10 +230,13 @@ function renderConnexion(root) {
     setBusy(btn, true, 'Connexion…');
     try {
       const res = await gestionApi('/api/member/login', { method: 'POST', body: { email, password }, auth: false });
+      if (!isPlausibleToken(res?.data?.token)) {
+        throw new Error('Connexion impossible : réponse inattendue du serveur. Réessayez, ou contactez le club si le problème persiste.');
+      }
       setToken(res.data.token, res.data.expiresAt);
       goTo('/');
     } catch (e) {
-      alertSlot.appendChild(alertBox('error', e.message));
+      showAlert(alertSlot, 'error', e.message);
       setBusy(btn, false, 'Se connecter');
     }
   });
@@ -204,9 +244,37 @@ function renderConnexion(root) {
 
 function setBusy(btn, busy, label) {
   btn.disabled = busy;
+  btn.setAttribute('aria-busy', String(busy));
   btn.innerHTML = '';
-  if (busy) btn.appendChild(el('span', { class: 'spinner' }));
+  if (busy) btn.appendChild(el('span', { class: 'spinner', 'aria-hidden': 'true' }));
   btn.appendChild(document.createTextNode(label));
+}
+// Champ mot de passe avec bouton afficher/masquer (utile sur mobile, et pour
+// les adhérents moins à l'aise avec un gestionnaire de mots de passe).
+function passwordField({ id, label, autocomplete, minlength, hint }) {
+  const input = el('input', {
+    id, name: id, type: 'password', autocomplete, required: true,
+    ...(minlength ? { minlength: String(minlength) } : {}),
+  });
+  const toggle = el('button', {
+    type: 'button',
+    class: 'field-toggle',
+    'aria-label': 'Afficher le mot de passe',
+    'aria-pressed': 'false',
+    onclick: () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      toggle.setAttribute('aria-pressed', String(show));
+      toggle.setAttribute('aria-label', show ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+      toggle.textContent = show ? '🙈' : '👁️';
+    },
+  }, '👁️');
+  const children = [
+    el('label', { for: id }, label),
+    el('div', { class: 'field-input-wrap' }, [input, toggle]),
+  ];
+  if (hint) children.push(el('div', { class: 'field-hint' }, hint));
+  return el('div', { class: 'field' }, children);
 }
 
 // ── Vue : activation ────────────────────────────────────────────────────
@@ -284,7 +352,7 @@ function renderRequestForm(root, { kicker, title, sub, endpoint, backTo }) {
       const res = await gestionApi(endpoint, { method: 'POST', body: { email }, auth: false });
       form.replaceWith(alertBox('ok', res.data.message || 'E-mail envoyé si un compte correspond.'));
     } catch (e) {
-      alertSlot.appendChild(alertBox('error', e.message));
+      showAlert(alertSlot, 'error', e.message);
       setBusy(btn, false, 'Envoyer le lien');
     }
   });
@@ -300,15 +368,8 @@ function renderSetPasswordForm(root, { title, endpoint, token, successMessage })
         el('h1', { class: 'auth-title' }, title),
         el('div', { id: 'alert-slot' }),
         el('form', { id: 'pwd-form' }, [
-          el('div', { class: 'field' }, [
-            el('label', { for: 'password' }, 'Nouveau mot de passe'),
-            el('input', { id: 'password', name: 'password', type: 'password', autocomplete: 'new-password', required: true, minlength: '8' }),
-            el('div', { class: 'field-hint' }, '8 caractères minimum.'),
-          ]),
-          el('div', { class: 'field' }, [
-            el('label', { for: 'password2' }, 'Confirmez le mot de passe'),
-            el('input', { id: 'password2', name: 'password2', type: 'password', autocomplete: 'new-password', required: true, minlength: '8' }),
-          ]),
+          passwordField({ id: 'password', label: 'Nouveau mot de passe', autocomplete: 'new-password', minlength: 8, hint: '8 caractères minimum.' }),
+          passwordField({ id: 'password2', label: 'Confirmez le mot de passe', autocomplete: 'new-password', minlength: 8 }),
           el('button', { class: 'btn btn-primary btn-block', type: 'submit', id: 'submit-btn' }, 'Valider'),
         ]),
       ]),
@@ -331,7 +392,7 @@ function renderSetPasswordForm(root, { title, endpoint, token, successMessage })
     setBusy(btn, true, 'Validation…');
     try {
       const res = await gestionApi(endpoint, { method: 'POST', body: { token, password }, auth: false });
-      if (res?.data?.token) {
+      if (isPlausibleToken(res?.data?.token)) {
         setToken(res.data.token, res.data.expiresAt);
         goTo('/');
         return;
@@ -341,7 +402,7 @@ function renderSetPasswordForm(root, { title, endpoint, token, successMessage })
         el('a', { class: 'btn btn-primary btn-block', href: '/connexion', style: 'margin-top:1rem' }, 'Se connecter'),
       ]));
     } catch (e) {
-      alertSlot.appendChild(alertBox('error', e.message));
+      showAlert(alertSlot, 'error', e.message);
       setBusy(btn, false, 'Valider');
     }
   });
@@ -422,6 +483,8 @@ function renderCertificatSection(me) {
   return section;
 }
 
+const MAX_CERT_SIZE = 8 * 1024 * 1024; // 8 Mo
+
 function renderCertificatUpload() {
   const box = el('div', { class: 'upload-box' }, [
     el('div', { class: 'upload-row' }, [
@@ -431,6 +494,7 @@ function renderCertificatUpload() {
       el('input', { type: 'file', id: 'cert-file', accept: '.pdf,.jpg,.jpeg,.png' }),
       el('input', { type: 'date', id: 'cert-date', 'aria-label': 'Date du certificat' }),
     ]),
+    el('div', { class: 'field-hint' }, 'Formats acceptés : PDF, JPG, PNG — 8 Mo maximum.'),
     el('div', { id: 'cert-status' }),
     el('button', { class: 'btn btn-primary btn-sm', type: 'button', id: 'cert-submit' }, 'Envoyer mon certificat'),
   ]);
@@ -447,6 +511,10 @@ function renderCertificatUpload() {
     status.innerHTML = '';
     const file = fileInput.files[0];
     if (!file) { status.appendChild(alertBox('error', 'Choisissez un fichier avant d\'envoyer.')); return; }
+    if (file.size > MAX_CERT_SIZE) {
+      status.appendChild(alertBox('error', `Fichier trop volumineux (${(file.size / 1024 / 1024).toFixed(1)} Mo) : 8 Mo maximum.`));
+      return;
+    }
     const form = new FormData();
     form.append('file', file);
     const dateVal = box.querySelector('#cert-date').value;
@@ -573,7 +641,7 @@ async function downloadInvoice(orderId) {
     a.remove();
     URL.revokeObjectURL(url);
   } catch (e) {
-    alert(e.message); // eslint-disable-line no-alert -- action ponctuelle hors formulaire, pas de zone d'erreur dédiée ici
+    showToast(e.message);
   }
 }
 
