@@ -1,16 +1,21 @@
 {
-	"compatibility_date": "2025-10-08",
-	"main": "src/index.ts",
+	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "espace-membre",
-	"upload_source_maps": true,
-	"d1_databases": [
-		{
-			"binding": "DB",
-			"database_id": "678b90d9-5d87-4011-b077-af5a4d0358ee",
-			"database_name": "affbc-production"
-		}
-	],
+	"main": "src/index.ts",
+	"compatibility_date": "2026-05-22",
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": true
+	},
 	"observability": {
 		"enabled": true
-	}
+	},
+	"routes": [
+		{
+			"pattern": "espace-membre.americanfullfightingbons.fr",
+			"custom_domain": true
+		}
+	]
 }
