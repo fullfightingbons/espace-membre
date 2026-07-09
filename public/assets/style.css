@@ -71,6 +71,18 @@ button { font-family: inherit; cursor: pointer; }
 .brand-text b { font-family: var(--font-display); font-weight: 700; font-size: 1rem; letter-spacing: .02em; }
 .brand-text span { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; }
 .topbar-actions { display: flex; align-items: center; gap: .75rem; }
+.crossnav {
+  display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end;
+  max-width: 760px; margin: 0 auto; padding: 0 clamp(1rem, 4vw, 2.5rem) .75rem;
+}
+.crossnav a {
+  border: 1px solid var(--line); border-radius: 999px; background: var(--paper);
+  color: var(--muted); padding: .38rem .75rem; font-size: .74rem; font-weight: 600;
+  text-decoration: none; box-shadow: var(--shadow-sm); transition: color .15s, border-color .15s, background .15s;
+}
+.crossnav a:hover, .crossnav a[aria-current="page"] {
+  color: #fff8f0; border-color: var(--red); background: linear-gradient(135deg, var(--red), var(--red-deep));
+}
 .btn-logout {
   background: none; border: 1px solid var(--line); color: var(--ink-soft);
   padding: .5rem .9rem; border-radius: 999px; font-size: .82rem; font-weight: 600;

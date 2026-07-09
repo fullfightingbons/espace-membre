@@ -128,6 +128,21 @@ function goTo(path) {
 }
 
 // ── Éléments partagés ───────────────────────────────────────────────────
+function renderCrossNav() {
+  const links = [
+    ['Site du club', SITE_URL],
+    ['Inscription', 'https://inscription.americanfullfightingbons.fr/'],
+    ['Calendrier', API.calendrier],
+    ['Boutique', API.boutique],
+    ['Espace membre', 'https://espace-membre.americanfullfightingbons.fr/'],
+  ];
+  return el('nav', { class: 'crossnav', 'aria-label': 'Navigation entre les services AFFBC' },
+    links.map(([label, href]) =>
+      el('a', { href, ...(label === 'Espace membre' ? { 'aria-current': 'page' } : {}) }, label)
+    )
+  );
+}
+
 function renderTopbar({ showLogout }) {
   const bar = el('div', { class: 'topbar' }, [
     el('a', { class: 'brand', href: SITE_URL }, [
@@ -416,6 +431,7 @@ function renderSetPasswordForm(root, { title, endpoint, token, successMessage })
 async function renderDashboard(root) {
   if (!getToken()) return goTo('/connexion');
 
+  root.appendChild(renderCrossNav());
   root.appendChild(renderTopbar({ showLogout: true }));
   const main = el('main');
   root.appendChild(main);
