@@ -19,6 +19,10 @@ const API = {
   calendrier: 'https://calendrier.americanfullfightingbons.fr',
 };
 const SITE_URL = 'https://americanfullfightingbons.fr';
+// Lien vers lequel rediriger un·e adhérent·e dont la cotisation n'est pas à
+// jour. À remplacer par le lien direct HelloAsso de renouvellement si tu en
+// as un tout prêt — en attendant, ça pointe vers le site du club.
+const RENEWAL_URL = SITE_URL;
 const TOKEN_KEY = 'affbc_membre_token';
 const TOKEN_EXP_KEY = 'affbc_membre_token_exp';
 const REQUEST_TIMEOUT_MS = 15000;
@@ -420,10 +424,11 @@ async function renderDashboard(root) {
   main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' }));
   main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem' }));
 
-  const [meRes, regRes, orderRes] = await Promise.allSettled([
+  const [meRes, regRes, orderRes, diplomeRes] = await Promise.allSettled([
     gestionApi('/api/member/me'),
     calendrierApi('/api/member/registrations'),
     boutiqueApi('/api/member/orders'),
+    gestionApi('/api/member/diplomes'),
   ]);
 
   main.innerHTML = '';
@@ -435,9 +440,18 @@ async function renderDashboard(root) {
   const me = meRes.value.data;
 
   main.appendChild(renderMemberCard(me));
+
+  const nextEvent = renderNextEvent(regRes);
+  if (nextEvent) main.appendChild(nextEvent);
+
   main.appendChild(renderCertificatSection(me));
+
+  const gradeSection = renderGradeSection(me, diplomeRes);
+  if (gradeSection) main.appendChild(gradeSection);
+
   main.appendChild(renderRegistrationsSection(regRes));
   main.appendChild(renderOrdersSection(orderRes));
+  main.appendChild(renderAccountSection(me));
 
   root.appendChild(el('footer', { class: 'app-footer' }, [
     'Une question sur votre dossier ? Écrivez à ',
@@ -458,15 +472,104 @@ function renderMemberCard(me) {
       ]),
       el('div', { class: 'seal' }, [el('img', { src: '/assets/logo.png', alt: '' })]),
     ]),
-    el('div', { class: `stamp ${cotisationOk ? 'stamp-ok' : 'stamp-warn'}` }, [
-      el('span', { class: 'stamp-dot' }),
-      cotisationOk ? 'Cotisation à jour' : `Cotisation : ${me.paiement || 'à régulariser'}`,
+    el('div', { class: 'member-card-bottom' }, [
+      el('div', { class: `stamp ${cotisationOk ? 'stamp-ok' : 'stamp-warn'}` }, [
+        el('span', { class: 'stamp-dot' }),
+        cotisationOk ? 'Cotisation à jour' : `Cotisation : ${me.paiement || 'à régulariser'}`,
+      ]),
+      cotisationOk
+        ? el('button', { class: 'btn btn-ghost btn-sm no-print', type: 'button', onclick: () => window.print() }, '🖶 Imprimer / PDF')
+        : el('a', { class: 'btn btn-primary btn-sm no-print', href: RENEWAL_URL, target: '_blank', rel: 'noopener' }, 'Renouveler mon adhésion →'),
     ]),
   ]);
 }
 
+// N'affiche rien tant que /api/member/registrations ne retourne aucune
+// inscription à venir — comportement inchangé si l'adhérent n'a rien de prévu.
+function renderNextEvent(regRes) {
+  if (regRes.status !== 'fulfilled') return null;
+  const items = regRes.value.data || [];
+  const now = Date.now();
+  const upcoming = items
+    .filter((r) => r.date_start && new Date(r.date_start).getTime() >= now && r.paiement_status !== 'annule')
+    .sort((a, b) => new Date(a.date_start) - new Date(b.date_start))[0];
+  if (!upcoming) return null;
+  return el('div', { class: 'next-event fade-rise' }, [
+    el('div', { class: 'next-event-label' }, 'Prochain rendez-vous'),
+    el('div', { class: 'next-event-title' }, upcoming.title || 'Événement'),
+    el('div', { class: 'next-event-meta' }, `${formatDate(upcoming.date_start)}${upcoming.lieu ? ' · ' + upcoming.lieu : ''}`),
+  ]);
+}
+
+// Section "Mon grade" : ceinture + licence viennent de /api/member/me
+// (member.couleur_ceinture / member.numero_licence côté gestion), les
+// diplômes de /api/member/diplomes. N'affiche rien si l'adhérent n'a ni
+// ceinture enregistrée ni diplôme — comportement inchangé pour les fiches
+// pas encore renseignées côté staff.
+function renderGradeSection(me, diplomeRes) {
+  const grade = me.ceinture;
+  const diplomes = diplomeRes && diplomeRes.status === 'fulfilled' ? (diplomeRes.value.data || []) : [];
+  if (!grade && !diplomes.length) return null;
+
+  const section = el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon grade')]),
+  ]);
+  if (grade) {
+    section.appendChild(el('div', { class: 'row', style: diplomes.length ? 'margin-bottom:.6rem' : '' }, [
+      el('div', { class: 'row-main' }, [
+        el('div', { class: 'row-title' }, `Ceinture ${grade}`),
+        me.numero_licence ? el('div', { class: 'row-sub' }, `Licence FFK n° ${me.numero_licence}`) : null,
+      ]),
+    ]));
+  }
+  if (diplomes.length) {
+    const list = el('div', { class: 'row-list' });
+    for (const d of diplomes) {
+      list.appendChild(el('div', { class: 'row' }, [
+        el('div', { class: 'row-main' }, [
+          el('div', { class: 'row-title' }, d.titre || 'Diplôme'),
+          el('div', { class: 'row-sub' }, `${formatDate(d.date_emission)}${d.saison ? ' · Saison ' + d.saison : ''}`),
+        ]),
+        el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => downloadDiplome(d.id, d.titre) }, 'Télécharger'),
+      ]));
+    }
+    section.appendChild(list);
+  }
+  return section;
+}
+
+async function downloadDiplome(id, titre) {
+  try {
+    const token = getToken();
+    const response = await fetch(API.gestion + `/api/member/documents/diplome/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error || 'Téléchargement impossible.');
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${String(titre || 'diplome').replace(/[^A-Za-z0-9 _-]/g, '') || 'diplome'}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    showToast(e.message);
+  }
+}
+
 function renderCertificatSection(me) {
   const hasValidCert = Number(me.certificat) === 1;
+  let expiryBadge = null;
+  if (hasValidCert && me.certificat_expire_le) {
+    const daysLeft = Math.ceil((new Date(me.certificat_expire_le).getTime() - Date.now()) / 86400000);
+    if (daysLeft < 0) expiryBadge = el('span', { class: 'badge badge-warn' }, 'Expiré');
+    else if (daysLeft <= 30) expiryBadge = el('span', { class: 'badge badge-warn' }, `Expire dans ${daysLeft} j`);
+  }
   const section = el('div', { class: 'section fade-rise fade-rise-1' }, [
     el('div', { class: 'section-head' }, [
       el('div', { class: 'section-title' }, 'Certificat médical'),
@@ -474,9 +577,11 @@ function renderCertificatSection(me) {
     el('div', { class: 'row', style: 'margin-bottom:.85rem' }, [
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, hasValidCert ? 'Certificat enregistré' : 'Aucun certificat à jour enregistré'),
-        el('div', { class: 'row-sub' }, me.certificat_date ? `Daté du ${formatDate(me.certificat_date)}` : "Déposez un certificat pour valider votre pratique."),
+        el('div', { class: 'row-sub' }, me.certificat_date
+          ? `Daté du ${formatDate(me.certificat_date)}${me.certificat_expire_le ? ' · valable jusqu\'au ' + formatDate(me.certificat_expire_le) : ''}`
+          : "Déposez un certificat pour valider votre pratique."),
       ]),
-      el('span', { class: `badge ${hasValidCert ? 'badge-ok' : 'badge-warn'}` }, hasValidCert ? 'À jour' : 'À déposer'),
+      expiryBadge || el('span', { class: `badge ${hasValidCert ? 'badge-ok' : 'badge-warn'}` }, hasValidCert ? 'À jour' : 'À déposer'),
     ]),
     renderCertificatUpload(),
   ]);
@@ -603,6 +708,9 @@ function renderOrdersSection(orderRes) {
   const list = el('div', { class: 'row-list' });
   for (const o of items) {
     const [label, cls] = statusLabels[o.status] || [o.status || '—', 'badge-muted'];
+    const hasItems = Array.isArray(o.items) && o.items.length > 0;
+    const itemsWrap = el('div', { class: 'order-items', style: 'display:none' },
+      hasItems ? o.items.map((it) => el('div', { class: 'order-item-line' }, `${it.quantity} × ${it.product_name} — ${formatMoney(it.unit_price)}`)) : []);
     list.appendChild(el('div', { class: 'row' }, [
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, `Commande n°${o.id}`),
@@ -610,12 +718,22 @@ function renderOrdersSection(orderRes) {
       ]),
       el('div', { class: 'row-actions' }, [
         el('span', { class: `badge ${cls}` }, label),
+        hasItems ? el('button', {
+          class: 'btn btn-ghost btn-sm', type: 'button', 'aria-expanded': 'false',
+          onclick: (event) => {
+            const open = itemsWrap.style.display !== 'none';
+            itemsWrap.style.display = open ? 'none' : 'block';
+            event.currentTarget.setAttribute('aria-expanded', String(!open));
+            event.currentTarget.textContent = open ? 'Détail' : 'Masquer';
+          },
+        }, 'Détail') : null,
         o.status === 'confirmed' ? el('button', {
           class: 'btn btn-ghost btn-sm', type: 'button',
           onclick: () => downloadInvoice(o.id),
         }, 'Facture') : null,
       ]),
     ]));
+    list.appendChild(itemsWrap);
   }
   section.appendChild(list);
   return section;
@@ -643,6 +761,86 @@ async function downloadInvoice(orderId) {
   } catch (e) {
     showToast(e.message);
   }
+}
+
+function textField(id, label, value, type = 'text') {
+  return el('div', { class: 'field' }, [
+    el('label', { for: id }, label),
+    el('input', { id, name: id, type, value: value || '' }),
+  ]);
+}
+
+// Section "Mon compte" : l'adhérent modifie lui-même ses coordonnées et son
+// contact d'urgence (PATCH /api/member/me), et peut changer son mot de passe
+// sans repasser par le flux "mot de passe oublié" (POST
+// /api/member/password/change). Nom, prénom, email, statut, cotisation
+// restent en lecture seule ici : ce sont des informations administratives,
+// modifiables uniquement par le bureau depuis l'interface staff.
+function renderAccountSection(me) {
+  const section = el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon compte')]),
+  ]);
+
+  const profileAlert = el('div');
+  const profileForm = el('form', { id: 'profile-form' }, [
+    el('div', { class: 'field-grid' }, [
+      textField('telephone', 'Téléphone', me.telephone, 'tel'),
+      textField('adresse', 'Adresse', me.adresse),
+      textField('code_postal', 'Code postal', me.code_postal),
+      textField('ville', 'Ville', me.ville),
+      textField('urgence_nom', "Contact d'urgence — nom", me.urgence_nom),
+      textField('urgence_telephone', "Contact d'urgence — téléphone", me.urgence_telephone, 'tel'),
+    ]),
+    profileAlert,
+    el('button', { class: 'btn btn-primary btn-sm', type: 'submit' }, 'Enregistrer mes coordonnées'),
+  ]);
+  profileForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const btn = profileForm.querySelector('button[type="submit"]');
+    const payload = {};
+    for (const id of ['telephone', 'adresse', 'code_postal', 'ville', 'urgence_nom', 'urgence_telephone']) {
+      payload[id] = profileForm.querySelector('#' + id).value.trim();
+    }
+    setBusy(btn, true, 'Enregistrement…');
+    try {
+      await gestionApi('/api/member/me', { method: 'PATCH', body: payload });
+      showAlert(profileAlert, 'ok', 'Coordonnées mises à jour.');
+    } catch (e) {
+      showAlert(profileAlert, 'error', e.message);
+    } finally {
+      setBusy(btn, false, 'Enregistrer mes coordonnées');
+    }
+  });
+
+  const pwdAlert = el('div');
+  const pwdForm = el('form', { id: 'account-password-form', style: 'margin-top:1.5rem' }, [
+    passwordField({ id: 'current-password', label: 'Mot de passe actuel', autocomplete: 'current-password' }),
+    passwordField({ id: 'next-password', label: 'Nouveau mot de passe', autocomplete: 'new-password', minlength: 8, hint: '8 caractères minimum.' }),
+    pwdAlert,
+    el('button', { class: 'btn btn-ghost btn-sm', type: 'submit' }, 'Changer mon mot de passe'),
+  ]);
+  pwdForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const btn = pwdForm.querySelector('button[type="submit"]');
+    const currentPassword = pwdForm.querySelector('#current-password').value;
+    const nextPassword = pwdForm.querySelector('#next-password').value;
+    setBusy(btn, true, 'Changement…');
+    try {
+      const res = await gestionApi('/api/member/password/change', { method: 'POST', body: { currentPassword, nextPassword } });
+      if (isPlausibleToken(res?.data?.token)) setToken(res.data.token, res.data.expiresAt);
+      showAlert(pwdAlert, 'ok', 'Mot de passe modifié.');
+      pwdForm.reset();
+    } catch (e) {
+      showAlert(pwdAlert, 'error', e.message);
+    } finally {
+      setBusy(btn, false, 'Changer mon mot de passe');
+    }
+  });
+
+  section.appendChild(profileForm);
+  section.appendChild(el('hr', { class: 'divider' }));
+  section.appendChild(pwdForm);
+  return section;
 }
 
 // ── Routeur ─────────────────────────────────────────────────────────────
