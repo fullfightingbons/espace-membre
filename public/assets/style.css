@@ -326,3 +326,11 @@ footer.app-footer a { text-decoration: underline; text-underline-offset: 2px; }
   .row { flex-direction: column; align-items: flex-start; }
   .row-actions { width: 100%; }
 }
+
+@media (max-width: 600px) {
+  /* Cibles tactiles agrandies (min ~44px recommandé), sans changer la densité desktop */
+  .crossnav a { padding: .5rem .85rem; font-size: .78rem; min-height: 36px; display: inline-flex; align-items: center; }
+  .field-toggle { padding: .7rem; min-width: 40px; min-height: 40px; display: flex; align-items: center; justify-content: center; }
+  .file-input-label { padding: .75rem 1rem; min-height: 44px; }
+  .btn-logout { padding: .65rem 1rem; min-height: 40px; }
+}
