@@ -96,6 +96,7 @@ async function apiCall(base, path, { method = 'GET', body, auth = true } = {}) {
 const gestionApi = (path, opts) => apiCall(API.gestion, path, opts);
 const boutiqueApi = (path, opts) => apiCall(API.boutique, path, opts);
 const calendrierApi = (path, opts) => apiCall(API.calendrier, path, opts);
+const siteApi = (path, opts) => apiCall(SITE_URL, path, opts);
 
 // ── Aides d'affichage ───────────────────────────────────────────────────
 function formatDate(value) {
@@ -440,11 +441,16 @@ async function renderDashboard(root) {
   main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' }));
   main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem' }));
 
-  const [meRes, regRes, orderRes, diplomeRes] = await Promise.allSettled([
+  const [meRes, regRes, orderRes, diplomeRes, newsRes, annuaireRes] = await Promise.allSettled([
     gestionApi('/api/member/me'),
     calendrierApi('/api/member/registrations'),
     boutiqueApi('/api/member/orders'),
     gestionApi('/api/member/diplomes'),
+    // Lecture publique (auth: false) : le fil d'actualités vient du site
+    // vitrine, pas de gestion, et ne doit jamais faire échouer le dashboard
+    // si le site est indisponible (cf. renderNewsSection, tolérant à l'échec).
+    siteApi('/api/bootstrap', { auth: false }),
+    gestionApi('/api/member/annuaire'),
   ]);
 
   main.innerHTML = '';
@@ -460,6 +466,9 @@ async function renderDashboard(root) {
   const nextEvent = renderNextEvent(regRes);
   if (nextEvent) main.appendChild(nextEvent);
 
+  const newsSection = renderNewsSection(newsRes);
+  if (newsSection) main.appendChild(newsSection);
+
   main.appendChild(renderCertificatSection(me));
 
   const gradeSection = renderGradeSection(me, diplomeRes);
@@ -468,6 +477,9 @@ async function renderDashboard(root) {
   main.appendChild(renderRegistrationsSection(regRes));
   main.appendChild(renderOrdersSection(orderRes));
   main.appendChild(renderAccountSection(me));
+
+  const annuaireSection = renderAnnuaireSection(annuaireRes);
+  if (annuaireSection) main.appendChild(annuaireSection);
 
   root.appendChild(el('footer', { class: 'app-footer' }, [
     'Une question sur votre dossier ? Écrivez à ',
@@ -515,6 +527,68 @@ function renderNextEvent(regRes) {
     el('div', { class: 'next-event-title' }, upcoming.title || 'Événement'),
     el('div', { class: 'next-event-meta' }, `${formatDate(upcoming.date_start)}${upcoming.lieu ? ' · ' + upcoming.lieu : ''}`),
   ]);
+}
+
+// Fil d'actualités du club, en lecture publique depuis le site vitrine
+// (/api/bootstrap → data.news, table news_items). Tolérant à l'échec : si le
+// site est indisponible ou l'appel cross-origin échoue, on n'affiche rien
+// plutôt que de casser le reste du dashboard (contrairement à meRes, qui est
+// bloquant). Même filtrage/tri que côté site (enabled=1, display_order) pour
+// rester cohérent avec ce que voient les visiteurs non-connectés.
+function renderNewsSection(newsRes) {
+  if (newsRes.status !== 'fulfilled') return null;
+  const items = (newsRes.value?.data?.news || [])
+    .filter((item) => Number(item.enabled ?? 1) === 1)
+    .sort((a, b) => Number(a.display_order) - Number(b.display_order))
+    .slice(0, 3);
+  if (!items.length) return null;
+
+  const section = el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'section-head' }, [
+      el('div', { class: 'section-title' }, 'Actualités du club'),
+      el('a', { class: 'link-quiet', href: `${SITE_URL}/#actualites`, target: '_blank', rel: 'noopener' }, 'Voir tout →'),
+    ]),
+  ]);
+  const list = el('div', { class: 'row-list' });
+  for (const item of items) {
+    list.appendChild(el('div', { class: 'row' }, [
+      el('div', { class: 'row-main' }, [
+        el('div', { class: 'row-title' }, item.title || 'Actualité'),
+        el('div', { class: 'row-sub' }, item.badge || item.date_label || ''),
+      ]),
+      item.cta_href
+        ? el('a', { class: 'btn btn-ghost btn-sm', href: item.cta_href, target: '_blank', rel: 'noopener' }, item.cta_label || 'Lire →')
+        : null,
+    ]));
+  }
+  section.appendChild(list);
+  return section;
+}
+
+// Annuaire des membres : liste (nom + prénom uniquement) des adhérents
+// ayant activé "annuaire_visible" dans leur profil (cf.
+// renderAccountSection). Tolérant à l'échec comme renderNewsSection : un
+// annuaire vide (personne n'a encore opté) ou une erreur réseau n'empêche
+// jamais le reste du dashboard de s'afficher — la section disparaît
+// simplement, plutôt que d'afficher un état vide qui inviterait à croire
+// que la fonctionnalité est cassée.
+function renderAnnuaireSection(annuaireRes) {
+  if (annuaireRes.status !== 'fulfilled') return null;
+  const members = annuaireRes.value?.data || [];
+  if (!members.length) return null;
+
+  const section = el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'section-head' }, [
+      el('div', { class: 'section-title' }, 'Annuaire des membres'),
+      el('div', { class: 'section-note' }, `${members.length} membre${members.length > 1 ? 's' : ''}`),
+    ]),
+  ]);
+  const chips = el('div', { class: 'chip-list' });
+  for (const m of members) {
+    chips.appendChild(el('span', { class: 'badge badge-muted' }, `${m.prenom || ''} ${m.nom || ''}`.trim()));
+  }
+  section.appendChild(chips);
+  return section;
 }
 
 // Section "Mon grade" : ceinture + licence viennent de /api/member/me
@@ -786,6 +860,21 @@ function textField(id, label, value, type = 'text') {
   ]);
 }
 
+// Attention : el() fait un setAttribute générique, donc passer `checked:
+// false` poserait quand même l'attribut (et cocherait la case). On
+// n'inclut la clé que lorsque la case doit être cochée.
+function checkboxField(id, label, checked, hint) {
+  const inputAttrs = { id, name: id, type: 'checkbox' };
+  if (checked) inputAttrs.checked = true;
+  return el('div', { class: 'field-checkbox' }, [
+    el('input', inputAttrs),
+    el('div', {}, [
+      el('label', { for: id }, label),
+      hint ? el('div', { class: 'field-hint' }, hint) : null,
+    ]),
+  ]);
+}
+
 // Section "Mon compte" : l'adhérent modifie lui-même ses coordonnées et son
 // contact d'urgence (PATCH /api/member/me), et peut changer son mot de passe
 // sans repasser par le flux "mot de passe oublié" (POST
@@ -807,6 +896,12 @@ function renderAccountSection(me) {
       textField('urgence_nom', "Contact d'urgence — nom", me.urgence_nom),
       textField('urgence_telephone', "Contact d'urgence — téléphone", me.urgence_telephone, 'tel'),
     ]),
+    checkboxField(
+      'annuaire_visible',
+      "Apparaître dans l'annuaire des membres",
+      me.annuaire_visible,
+      "Seuls votre nom et prénom seront visibles des autres adhérents connectés — indépendant du droit à l'image."
+    ),
     profileAlert,
     el('button', { class: 'btn btn-primary btn-sm', type: 'submit' }, 'Enregistrer mes coordonnées'),
   ]);
@@ -817,6 +912,7 @@ function renderAccountSection(me) {
     for (const id of ['telephone', 'adresse', 'code_postal', 'ville', 'urgence_nom', 'urgence_telephone']) {
       payload[id] = profileForm.querySelector('#' + id).value.trim();
     }
+    payload.annuaire_visible = profileForm.querySelector('#annuaire_visible').checked;
     setBusy(btn, true, 'Enregistrement…');
     try {
       await gestionApi('/api/member/me', { method: 'PATCH', body: payload });
