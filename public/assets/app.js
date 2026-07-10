@@ -142,7 +142,7 @@ function goTo(path) {
 // ── Éléments partagés ───────────────────────────────────────────────────
 function renderCrossNav() {
   const links = [
-    ['Site du club', SITE_URL],
+    ['Club', SITE_URL],
     ['Inscription', 'https://inscription.americanfullfightingbons.fr/'],
     ['Calendrier', API.calendrier],
     ['Boutique', API.boutique],
@@ -156,21 +156,24 @@ function renderCrossNav() {
 }
 
 function renderTopbar({ showLogout }) {
-  const bar = el('div', { class: 'topbar' }, [
-    el('a', { class: 'brand', href: SITE_URL }, [
-      el('img', { src: '/assets/logo.png', alt: '' }),
-      el('span', { class: 'brand-text' }, [
-        el('b', {}, 'AFFBC'),
-        el('span', {}, 'Espace membre'),
+  const wrap = el('div', { class: 'nav-wrap' }, [
+    renderCrossNav(),
+    el('div', { class: 'topbar' }, [
+      el('a', { class: 'brand', href: SITE_URL }, [
+        el('img', { src: '/assets/logo.png', alt: '' }),
+        el('span', { class: 'brand-text' }, [
+          el('b', {}, 'AFFBC'),
+          el('span', {}, 'Espace membre'),
+        ]),
       ]),
+      showLogout
+        ? el('div', { class: 'topbar-actions' }, [
+            el('button', { class: 'btn-logout', type: 'button', onclick: handleLogout }, 'Se déconnecter'),
+          ])
+        : null,
     ]),
-    showLogout
-      ? el('div', { class: 'topbar-actions' }, [
-          el('button', { class: 'btn-logout', type: 'button', onclick: handleLogout }, 'Se déconnecter'),
-        ])
-      : null,
   ]);
-  return bar;
+  return wrap;
 }
 
 function alertBox(type, message) {
@@ -443,7 +446,6 @@ function renderSetPasswordForm(root, { title, endpoint, token, successMessage })
 async function renderDashboard(root) {
   if (!getToken()) return goTo('/connexion');
 
-  root.appendChild(renderCrossNav());
   root.appendChild(renderTopbar({ showLogout: true }));
   const main = el('main');
   root.appendChild(main);
