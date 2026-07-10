@@ -51,7 +51,7 @@ function clearToken() {
 }
 
 // ── Client API ──────────────────────────────────────────────────────────
-async function apiCall(base, path, { method = 'GET', body, auth = true, redirectOn401 = true } = {}) {
+async function apiCall(base, path, { method = 'GET', body, auth = true } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (auth) {
     const token = getToken();
@@ -77,16 +77,8 @@ async function apiCall(base, path, { method = 'GET', body, auth = true, redirect
     clearTimeout(timeoutId);
   }
   if (response.status === 401 && auth) {
-    // Un 401 sur un appel secondaire (calendrier/boutique en parallèle dans
-    // renderDashboard, par exemple) ne doit pas détruire une session par
-    // ailleurs valide côté gestion : seul l'appel qui valide réellement la
-    // session (typiquement /api/member/me) doit déclencher la déconnexion
-    // globale. redirectOn401=false laisse l'appelant décider quoi faire de
-    // l'échec (l'ignorer, l'afficher localement, etc.) sans toucher au token.
-    if (redirectOn401) {
-      clearToken();
-      goTo('/connexion?expire=1');
-    }
+    clearToken();
+    goTo('/connexion?expire=1');
     throw new Error('Session expirée');
   }
   const isJson = (response.headers.get('Content-Type') || '').includes('application/json');
@@ -462,23 +454,16 @@ async function renderDashboard(root) {
   main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' }));
   main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem' }));
 
-  // Seul /api/member/me valide réellement la session : c'est le seul appel
-  // qui doit pouvoir déclencher clearToken()+redirection en cas de 401. Les
-  // autres appels ci-dessous tournent en parallèle et sont secondaires — un
-  // 401 isolé sur calendrier/boutique (service qui n'a pas encore vu le
-  // jeton, désynchronisation ponctuelle, etc.) ne doit pas déconnecter un·e
-  // adhérent·e dont la session gestion est par ailleurs valide. Voir le
-  // commentaire dans apiCall() pour le détail du bug que ça corrige.
   const [meRes, regRes, orderRes, diplomeRes, newsRes, annuaireRes, clubRes] = await Promise.allSettled([
     gestionApi('/api/member/me'),
-    calendrierApi('/api/member/registrations', { redirectOn401: false }),
-    boutiqueApi('/api/member/orders', { redirectOn401: false }),
-    gestionApi('/api/member/diplomes', { redirectOn401: false }),
+    calendrierApi('/api/member/registrations'),
+    boutiqueApi('/api/member/orders'),
+    gestionApi('/api/member/diplomes'),
     // Lecture publique (auth: false) : le fil d'actualités vient du site
     // vitrine, pas de gestion, et ne doit jamais faire échouer le dashboard
     // si le site est indisponible (cf. renderNewsSection, tolérant à l'échec).
     siteApi('/api/bootstrap', { auth: false }),
-    gestionApi('/api/member/annuaire', { redirectOn401: false }),
+    gestionApi('/api/member/annuaire'),
     // Lecture publique (auth: false) : /api/bootstrap sur gestion accepte les
     // appels non authentifiés et ne renvoie alors que PUBLIC_CLUB_INFO_KEYS
     // (nom, adresse, siret, etc. — cf. src/index.ts de gestion). Utilisé
