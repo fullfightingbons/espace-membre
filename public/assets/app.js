@@ -20,9 +20,8 @@ const API = {
 };
 const SITE_URL = 'https://americanfullfightingbons.fr';
 // Lien vers lequel rediriger un·e adhérent·e dont la cotisation n'est pas à
-// jour. À remplacer par le lien direct HelloAsso de renouvellement si tu en
-// as un tout prêt — en attendant, ça pointe vers le site du club.
-const RENEWAL_URL = SITE_URL;
+// jour : le formulaire de ré-inscription en ligne du club.
+const RENEWAL_URL = 'https://inscription.americanfullfightingbons.fr/';
 const TOKEN_KEY = 'affbc_membre_token';
 const TOKEN_EXP_KEY = 'affbc_membre_token_exp';
 const REQUEST_TIMEOUT_MS = 15000;
