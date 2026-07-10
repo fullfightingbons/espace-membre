@@ -110,6 +110,18 @@ function formatMoney(value) {
   if (!Number.isFinite(n)) return '—';
   return n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 }
+// Identique à esc() dans le back-office gestion (public/assets/app.js) :
+// nécessaire uniquement pour buildCotisationReceiptHTML, seul endroit de ce
+// fichier qui construit du HTML par concaténation de chaînes plutôt que via
+// el() (qui échappe déjà tout via textContent/setAttribute).
+function escapeHtml(value) {
+  return (value ?? '').toString()
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
@@ -441,7 +453,7 @@ async function renderDashboard(root) {
   main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' }));
   main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem' }));
 
-  const [meRes, regRes, orderRes, diplomeRes, newsRes, annuaireRes] = await Promise.allSettled([
+  const [meRes, regRes, orderRes, diplomeRes, newsRes, annuaireRes, clubRes] = await Promise.allSettled([
     gestionApi('/api/member/me'),
     calendrierApi('/api/member/registrations'),
     boutiqueApi('/api/member/orders'),
@@ -451,6 +463,11 @@ async function renderDashboard(root) {
     // si le site est indisponible (cf. renderNewsSection, tolérant à l'échec).
     siteApi('/api/bootstrap', { auth: false }),
     gestionApi('/api/member/annuaire'),
+    // Lecture publique (auth: false) : /api/bootstrap sur gestion accepte les
+    // appels non authentifiés et ne renvoie alors que PUBLIC_CLUB_INFO_KEYS
+    // (nom, adresse, siret, etc. — cf. src/index.ts de gestion). Utilisé
+    // uniquement pour l'en-tête du reçu de cotisation généré côté client.
+    gestionApi('/api/bootstrap', { auth: false }),
   ]);
 
   main.innerHTML = '';
@@ -471,7 +488,7 @@ async function renderDashboard(root) {
 
   main.appendChild(renderCertificatSection(me));
 
-  const bulletinSection = renderBulletinSection(me);
+  const bulletinSection = renderBulletinSection(me, clubRes);
   if (bulletinSection) main.appendChild(bulletinSection);
 
   const gradeSection = renderGradeSection(me, diplomeRes);
@@ -604,22 +621,131 @@ function renderAnnuaireSection(annuaireRes) {
 // inscription-americanfullfightingbons. Ne s'affiche que si ce document
 // existe déjà (bulletin_disponible) : un adhérent créé manuellement par le
 // bureau sans passer par le formulaire d'inscription n'en aura pas.
-function renderBulletinSection(me) {
-  if (!me.bulletin_disponible) return null;
-  return el('div', { class: 'section fade-rise' }, [
-    el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon inscription')]),
-    el('div', { class: 'row' }, [
+function renderBulletinSection(me, clubRes) {
+  const hasReceipt = Number(me.cotisation) > 0;
+  if (!me.bulletin_disponible && !hasReceipt) return null;
+
+  const rows = [];
+  if (me.bulletin_disponible) {
+    rows.push(el('div', { class: 'row' }, [
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, "Bulletin d'inscription"),
-        el('div', { class: 'row-sub' }, 'Reçu de paiement et confirmation d\'adhésion'),
+        el('div', { class: 'row-sub' }, "Formulaire rempli à l'adhésion"),
       ]),
       el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => printBulletin() }, 'Imprimer'),
-    ]),
+    ]));
+  }
+  if (hasReceipt) {
+    rows.push(el('div', { class: 'row' }, [
+      el('div', { class: 'row-main' }, [
+        el('div', { class: 'row-title' }, 'Reçu de cotisation'),
+        el('div', { class: 'row-sub' }, `${formatMoney(me.cotisation)} · saison ${seasonFromDateFr(me.date_inscription)}`),
+      ]),
+      el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => printCotisationReceipt(me, clubRes) }, 'Imprimer'),
+    ]));
+  }
+  return el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon inscription')]),
+    ...rows,
   ]);
 }
 
 async function printBulletin() {
   await openPdfForPrint('/api/member/documents/bulletin', "Bulletin d'inscription indisponible.");
+}
+
+// Convention de saison sportive du club (démarre au 1er juillet) — reprise
+// telle quelle de seasonFromDate()/currentSeasonLabel() dans le back-office
+// gestion (public/assets/app.js), pour que le libellé affiché au membre soit
+// cohérent avec celui que voit le bureau.
+function seasonFromDateFr(dateStr) {
+  const d = dateStr ? new Date(dateStr) : new Date();
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const start = m >= 7 ? y : y - 1;
+  return `${start}-${start + 1}`;
+}
+
+// Reçu de cotisation généré entièrement côté client (pas de PDF stocké sur
+// R2, contrairement au bulletin et à la fiche de notation) : même principe
+// que buildFacHTML()/pwPrint() dans le back-office gestion pour les ventes
+// et les reçus de don, appliqué ici à la cotisation d'adhésion.
+//
+// Hypothèses à vérifier côté club avant diffusion large :
+// - `cotisation` est supposé être le montant net réellement encaissé. Si ce
+//   n'est pas le cas (ex. montant brut avant réduction Pass Région), le
+//   reçu affichera un montant inexact — la réduction Pass Région
+//   (adherents.montant_pass_region) n'est volontairement pas soustraite ici
+//   faute de certitude sur ce point.
+// - `date_inscription` est utilisée comme date du reçu, faute de colonne
+//   dédiée à la date de paiement sur `adherents` (contrairement aux ventes
+//   manuelles côté gestion, qui ont date_paiement). Sur un renouvellement,
+//   vérifier que cette date est bien mise à jour par le worker inscription.
+//
+// Volontairement affiché comme un simple "reçu" (pas une "facture") et sans
+// aucune mention de déduction fiscale : une cotisation d'adhésion n'ouvre
+// pas droit à réduction d'impôt en France, contrairement à un don — ne pas
+// copier le bloc "66 % déductible" de buildFacHTML côté gestion ici.
+function buildCotisationReceiptHTML(me, clubRes) {
+  const club = clubRes && clubRes.status === 'fulfilled' ? (clubRes.value.data?.clubInfo || {}) : {};
+  const clubName = club.nom || 'AFFBC';
+  const montant = Number(me.cotisation) || 0;
+  const season = seasonFromDateFr(me.date_inscription);
+  const numero = `COT-${season.slice(0, 4)}-${String(me.numero_licence || '').replace(/[^A-Za-z0-9]/g, '') || 'ADH'}`;
+  const adresseMembre = [me.adresse, [me.code_postal, me.ville].filter(Boolean).join(' ')].filter(Boolean).join('<br>');
+
+  return `<div style="background:#fff;border:.5px solid #ddd;border-radius:10px;overflow:hidden;font-family:sans-serif;font-size:12px;color:#222">
+  <div style="background:#111;padding:16px 20px;display:flex;justify-content:space-between;align-items:center">
+  <div style="display:flex;align-items:center;gap:10px">
+  <div style="width:44px;height:44px;border-radius:50%;overflow:hidden;border:2px solid #D4AC0D;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">${club.logo ? `<img src="${escapeHtml(club.logo)}" style="width:100%;height:100%;object-fit:contain">` : '<span style="font-size:22px">🥊</span>'}</div>
+  <div><div style="color:#fff;font-size:12px;font-weight:500">${escapeHtml(clubName)}</div><div style="color:#aaa;font-size:10px;line-height:1.6">${escapeHtml(club.adresse || '')}<br>${escapeHtml(club.email || '')}</div></div>
+  </div>
+  <div style="text-align:right">
+  <div style="color:#D4AC0D;font-size:15px;font-weight:500">REÇU DE COTISATION</div>
+  <div style="color:#fff;font-size:11px;margin-top:2px">${escapeHtml(numero)}</div>
+  <div style="color:#888;font-size:10px">${formatDate(me.date_inscription)}</div>
+  </div>
+  </div>
+  <div style="padding:16px 20px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+  <div><div style="font-size:9px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Émetteur</div>
+  <p style="font-size:11px;line-height:1.6">${escapeHtml(clubName)}<br>${escapeHtml(club.adresse || '')}${club.siret ? `<br>SIRET : ${escapeHtml(club.siret)}` : ''}</p></div>
+  <div><div style="font-size:9px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Adhérent</div>
+  <p style="font-size:11px;line-height:1.6">${escapeHtml(`${me.prenom || ''} ${me.nom || ''}`.trim())}<br>${adresseMembre}</p></div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px">
+  <thead><tr style="background:#111;color:#fff">
+  <th style="padding:5px 8px;text-align:left;font-weight:500">Désignation</th>
+  <th style="padding:5px 8px;text-align:right;font-weight:500">Montant</th>
+  </tr></thead>
+  <tbody><tr>
+  <td style="padding:5px 8px;border-bottom:.5px solid #eee">Cotisation adhésion — saison ${escapeHtml(season)}</td>
+  <td style="padding:5px 8px;border-bottom:.5px solid #eee;text-align:right;font-weight:500">${montant.toFixed(2)} €</td>
+  </tr></tbody>
+  </table>
+  <div style="display:flex;justify-content:flex-end">
+  <div style="min-width:200px">
+  <div style="display:flex;justify-content:space-between;padding:6px 10px;font-size:13px;font-weight:500;background:#111;color:#fff;border-radius:4px;margin-top:4px"><span>Total réglé</span><span>${montant.toFixed(2)} €</span></div>
+  </div>
+  </div>
+  <p style="font-size:10px;color:#888;margin-top:10px;padding-top:8px;border-top:.5px solid #eee">Statut : ${escapeHtml(me.paiement || '—')}. Ce document tient lieu de reçu de cotisation ; il n'ouvre pas droit à réduction d'impôt (à la différence d'un don).</p>
+  </div>
+  <div style="background:#111;padding:7px 20px;font-size:9px;color:#888;text-align:center">${escapeHtml(clubName)}${club.siret ? ` — SIRET ${escapeHtml(club.siret)}` : ''} — Association loi 1901 — TVA non applicable, art. 261-7-1°b CGI</div>
+  </div>`;
+}
+
+function printCotisationReceipt(me, clubRes) {
+  printHtmlDocument(buildCotisationReceiptHTML(me, clubRes), `Reçu de cotisation`);
+}
+
+// Équivalent de pwPrint() dans le back-office gestion : ouvre un nouvel
+// onglet, y écrit un document HTML autonome, déclenche l'impression.
+function printHtmlDocument(html, title) {
+  const w = window.open('', '_blank');
+  if (!w) { showToast("Impossible d'ouvrir la fenêtre d'impression (bloqueur de popup ?)."); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title><style>body{margin:20px;font-family:sans-serif}@media print{body{margin:0}}</style></head><body>${html}<script>setTimeout(()=>window.print(),300);</script></body></html>`);
+  w.document.close();
 }
 
 function renderGradeSection(me, diplomeRes) {
