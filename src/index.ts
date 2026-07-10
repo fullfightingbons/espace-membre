@@ -20,7 +20,7 @@ const SECURITY_HEADERS: Record<string, string> = {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data:",
-    "connect-src 'self' https://gestion.americanfullfightingbons.fr https://boutique.americanfullfightingbons.fr https://calendrier.americanfullfightingbons.fr",
+    "connect-src 'self' https://gestion.americanfullfightingbons.fr https://boutique.americanfullfightingbons.fr https://calendrier.americanfullfightingbons.fr https://americanfullfightingbons.fr",
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
