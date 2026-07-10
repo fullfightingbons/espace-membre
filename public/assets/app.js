@@ -471,6 +471,9 @@ async function renderDashboard(root) {
 
   main.appendChild(renderCertificatSection(me));
 
+  const bulletinSection = renderBulletinSection(me);
+  if (bulletinSection) main.appendChild(bulletinSection);
+
   const gradeSection = renderGradeSection(me, diplomeRes);
   if (gradeSection) main.appendChild(gradeSection);
 
@@ -596,6 +599,29 @@ function renderAnnuaireSection(annuaireRes) {
 // diplômes de /api/member/diplomes. N'affiche rien si l'adhérent n'a ni
 // ceinture enregistrée ni diplôme — comportement inchangé pour les fiches
 // pas encore renseignées côté staff.
+// Bulletin d'inscription / reçu de paiement, généré automatiquement à la
+// confirmation HelloAsso (ou inscription gratuite) par le worker
+// inscription-americanfullfightingbons. Ne s'affiche que si ce document
+// existe déjà (bulletin_disponible) : un adhérent créé manuellement par le
+// bureau sans passer par le formulaire d'inscription n'en aura pas.
+function renderBulletinSection(me) {
+  if (!me.bulletin_disponible) return null;
+  return el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon inscription')]),
+    el('div', { class: 'row' }, [
+      el('div', { class: 'row-main' }, [
+        el('div', { class: 'row-title' }, "Bulletin d'inscription"),
+        el('div', { class: 'row-sub' }, 'Reçu de paiement et confirmation d\'adhésion'),
+      ]),
+      el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => printBulletin() }, 'Imprimer'),
+    ]),
+  ]);
+}
+
+async function printBulletin() {
+  await openPdfForPrint('/api/member/documents/bulletin', "Bulletin d'inscription indisponible.");
+}
+
 function renderGradeSection(me, diplomeRes) {
   const grade = me.ceinture;
   const diplomes = diplomeRes && diplomeRes.status === 'fulfilled' ? (diplomeRes.value.data || []) : [];
