@@ -599,17 +599,26 @@ function renderAnnuaireSection(annuaireRes) {
 function renderGradeSection(me, diplomeRes) {
   const grade = me.ceinture;
   const diplomes = diplomeRes && diplomeRes.status === 'fulfilled' ? (diplomeRes.value.data || []) : [];
-  if (!grade && !diplomes.length) return null;
+  if (!grade && !diplomes.length && !me.notation_disponible) return null;
 
   const section = el('div', { class: 'section fade-rise' }, [
     el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon grade')]),
   ]);
   if (grade) {
-    section.appendChild(el('div', { class: 'row', style: diplomes.length ? 'margin-bottom:.6rem' : '' }, [
+    section.appendChild(el('div', { class: 'row', style: (diplomes.length || me.notation_disponible) ? 'margin-bottom:.6rem' : '' }, [
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, `Ceinture ${grade}`),
         me.numero_licence ? el('div', { class: 'row-sub' }, `Licence FFK n° ${me.numero_licence}`) : null,
       ]),
+    ]));
+  }
+  if (me.notation_disponible) {
+    section.appendChild(el('div', { class: 'row', style: diplomes.length ? 'margin-bottom:.6rem' : '' }, [
+      el('div', { class: 'row-main' }, [
+        el('div', { class: 'row-title' }, 'Fiche de notation'),
+        el('div', { class: 'row-sub' }, 'Évaluation technique établie par un coach'),
+      ]),
+      el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => printNotation() }, 'Imprimer'),
     ]));
   }
   if (diplomes.length) {
@@ -626,6 +635,35 @@ function renderGradeSection(me, diplomeRes) {
     section.appendChild(list);
   }
   return section;
+}
+
+// Ouvre un PDF authentifié dans un nouvel onglet plutôt que de forcer un
+// téléchargement (contrairement à downloadDiplome ci-dessous) : la fiche de
+// notation est consultée pour impression immédiate, pas pour être archivée
+// localement — le lecteur PDF natif de l'onglet expose déjà un bouton
+// imprimer. L'URL blob est révoquée après un délai (et non immédiatement au
+// clic comme pour downloadDiplome) le temps que le nouvel onglet la charge.
+async function openPdfForPrint(path, errorFallback) {
+  try {
+    const token = getToken();
+    const response = await fetch(API.gestion + path, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error || errorFallback);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) {
+    showToast(e.message);
+  }
+}
+
+async function printNotation() {
+  await openPdfForPrint('/api/member/documents/notation', 'Fiche de notation indisponible.');
 }
 
 async function downloadDiplome(id, titre) {
