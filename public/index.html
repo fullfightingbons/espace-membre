@@ -6,6 +6,16 @@
 <title>Espace membre — American Full Fighting Bons en Chablais</title>
 <meta name="description" content="Espace membre AFFBC : votre cotisation, votre certificat médical, vos commandes et vos inscriptions aux stages.">
 <meta name="robots" content="noindex, nofollow">
+<!-- Posé avant le CSS/JS pour éviter un flash clair→sombre : sans ce script
+     inline, le thème ne serait appliqué qu'après le chargement de app.js
+     (module, donc différé), soit bien après le premier paint. -->
+<script>
+try {
+  var t = localStorage.getItem('affbc_theme');
+  if (t !== 'dark' && t !== 'light') t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', t);
+} catch (e) {}
+</script>
 <link rel="icon" href="/assets/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -27,11 +37,11 @@
      run_worker_first dans wrangler.json), donc aucun en-tête ne peut
      garantir la fraîcheur du cache — le paramètre de requête sert de
      cache-busting explicite. -->
-<link rel="stylesheet" href="/assets/style.css?v=20260712">
+<link rel="stylesheet" href="/assets/style.css?v=20260711c">
 </head>
 <body>
 <a class="skip-link" href="#app">Aller au contenu</a>
 <div id="app" role="main" aria-live="polite"></div>
-<script type="module" src="/assets/app.js?v=20260712"></script>
+<script type="module" src="/assets/app.js?v=20260711c"></script>
 </body>
 </html>

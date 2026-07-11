@@ -50,6 +50,28 @@ function clearToken() {
   localStorage.removeItem(TOKEN_EXP_KEY);
 }
 
+// ── Thème clair/sombre ──────────────────────────────────────────────────
+// Appliqué très tôt (voir le script inline dans index.html, qui pose déjà
+// l'attribut avant le premier paint pour éviter un flash) ; les fonctions
+// ci-dessous ne font que garder le bouton et le storage synchronisés après
+// coup, quand l'adhérent bascule manuellement.
+const THEME_KEY = 'affbc_theme';
+function getTheme() {
+  const stored = localStorage.getItem(THEME_KEY);
+  if (stored === 'dark' || stored === 'light') return stored;
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+}
+function toggleTheme() {
+  const next = getTheme() === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, next);
+  applyTheme(next);
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = next === 'dark' ? '☀️' : '🌙';
+}
+
 // ── Client API ──────────────────────────────────────────────────────────
 async function apiCall(base, path, { method = 'GET', body, auth = true } = {}) {
   const headers = { 'Content-Type': 'application/json' };
@@ -178,11 +200,16 @@ function renderTopbar({ showLogout }) {
           el('span', {}, 'Espace membre'),
         ]),
       ]),
-      showLogout
-        ? el('div', { class: 'topbar-actions' }, [
-            el('button', { class: 'btn-logout', type: 'button', onclick: handleLogout }, 'Se déconnecter'),
-          ])
-        : null,
+      el('div', { class: 'topbar-actions' }, [
+        el('button', {
+          class: 'btn-theme', type: 'button', id: 'theme-toggle',
+          'aria-label': 'Changer de thème (clair/sombre)', title: 'Changer de thème',
+          onclick: toggleTheme,
+        }, getTheme() === 'dark' ? '☀️' : '🌙'),
+        showLogout
+          ? el('button', { class: 'btn-logout', type: 'button', onclick: handleLogout }, 'Se déconnecter')
+          : null,
+      ]),
     ]),
   ]);
   return wrap;
@@ -488,6 +515,7 @@ async function renderDashboard(root) {
   const me = dashboardRes.data.me;
   const diplomeRes = { status: 'fulfilled', value: { data: dashboardRes.data.diplomes } };
   const annuaireRes = { status: 'fulfilled', value: { data: dashboardRes.data.annuaire } };
+  const cotisations = dashboardRes.data.cotisations || [];
 
   main.innerHTML = '';
   main.appendChild(renderMemberCard(me));
@@ -502,7 +530,7 @@ async function renderDashboard(root) {
 
   main.appendChild(renderCertificatSection(me));
 
-  const bulletinSection = renderBulletinSection(me);
+  const bulletinSection = renderBulletinSection(me, cotisations);
   if (bulletinSection) main.appendChild(bulletinSection);
 
   const gradeSection = renderGradeSection(me, diplomeRes);
@@ -640,11 +668,33 @@ function renderAnnuaireSection(annuaireRes) {
       el('div', { class: 'section-note' }, `${members.length} membre${members.length > 1 ? 's' : ''}`),
     ]),
   ]);
+  // Recherche 100% côté client : `members` est déjà la liste complète
+  // (l'API /dashboard ne pagine pas l'annuaire), donc filtrer ici évite un
+  // aller-retour réseau à chaque frappe pour une liste de cette taille.
+  const search = el('input', {
+    class: 'annuaire-search', type: 'search', placeholder: 'Rechercher un membre…',
+    'aria-label': 'Rechercher dans l\'annuaire',
+  });
   const chips = el('div', { class: 'chip-list' });
-  for (const m of members) {
-    chips.appendChild(el('span', { class: 'badge badge-muted' }, `${m.prenom || ''} ${m.nom || ''}`.trim()));
+  const emptyState = el('div', { class: 'empty', hidden: true }, 'Aucun membre ne correspond à cette recherche.');
+
+  function renderChips(filter) {
+    const needle = filter.trim().toLowerCase();
+    chips.innerHTML = '';
+    const filtered = !needle
+      ? members
+      : members.filter((m) => `${m.prenom || ''} ${m.nom || ''}`.toLowerCase().includes(needle));
+    for (const m of filtered) {
+      chips.appendChild(el('span', { class: 'badge badge-muted' }, `${m.prenom || ''} ${m.nom || ''}`.trim()));
+    }
+    emptyState.hidden = filtered.length > 0;
   }
+  search.addEventListener('input', () => renderChips(search.value));
+  renderChips('');
+
+  section.appendChild(search);
   section.appendChild(chips);
+  section.appendChild(emptyState);
   return section;
 }
 
@@ -658,9 +708,19 @@ function renderAnnuaireSection(annuaireRes) {
 // inscription-americanfullfightingbons. Ne s'affiche que si ce document
 // existe déjà (bulletin_disponible) : un adhérent créé manuellement par le
 // bureau sans passer par le formulaire d'inscription n'en aura pas.
-function renderBulletinSection(me) {
+function renderBulletinSection(me, cotisations) {
   const hasReceipt = Number(me.cotisation) > 0;
-  if (!me.bulletin_disponible && !hasReceipt) return null;
+  // `cotisations` (venant de /api/member/dashboard) est une ligne par saison,
+  // la plus récente en premier — donc déjà incluse dedans la saison en
+  // cours. Repli sur `me` seul si le tableau est absent/vide : couvre le cas
+  // où gestion n'expose pas encore ce champ (déploiement pas encore fait,
+  // ou ancien token mis en cache côté navigateur pointant vers une version
+  // antérieure de l'API).
+  const seasons = (Array.isArray(cotisations) && cotisations.length)
+    ? cotisations.filter((c) => Number(c.cotisation) > 0)
+    : (hasReceipt ? [{ cotisation: me.cotisation, paiement: me.paiement, date_inscription: me.date_inscription }] : []);
+
+  if (!me.bulletin_disponible && !seasons.length) return null;
 
   const rows = [];
   if (me.bulletin_disponible) {
@@ -672,18 +732,19 @@ function renderBulletinSection(me) {
       el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => printBulletin() }, 'Imprimer'),
     ]));
   }
-  if (hasReceipt) {
+  seasons.forEach((s, i) => {
+    const season = s.saison || seasonFromDateFr(s.date_inscription);
     rows.push(el('div', { class: 'row' }, [
       el('div', { class: 'row-main' }, [
-        el('div', { class: 'row-title' }, 'Reçu de cotisation'),
-        el('div', { class: 'row-sub' }, `${formatMoney(me.cotisation)} · saison ${seasonFromDateFr(me.date_inscription)}`),
+        el('div', { class: 'row-title' }, i === 0 ? 'Reçu de cotisation' : `Reçu — saison ${season}`),
+        el('div', { class: 'row-sub' }, `${formatMoney(s.cotisation)} · saison ${season}`),
       ]),
       el('button', {
         class: 'btn btn-ghost btn-sm', type: 'button',
-        onclick: (event) => printCotisationReceipt(event.currentTarget, me),
+        onclick: (event) => printCotisationReceipt(event.currentTarget, { ...me, ...s }),
       }, 'Imprimer'),
     ]));
-  }
+  });
   return el('div', { class: 'section fade-rise' }, [
     el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon inscription')]),
     ...rows,
@@ -1257,7 +1318,40 @@ function renderAccountSection(me) {
     }
   });
 
+  const prefAlert = el('div');
+  // `me.pref_email_feedback` peut être absent si gestion n'a pas encore ce
+  // champ déployé (cf. migration 0020) : dans ce cas on affiche coché par
+  // défaut (comportement historique — ces emails étaient déjà envoyés à
+  // tout le monde), plutôt que de décocher silencieusement une préférence
+  // qui n'existe pas encore côté serveur.
+  const prefForm = el('form', { id: 'preferences-form', style: 'margin-top:1.5rem' }, [
+    checkboxField(
+      'pref_email_feedback',
+      'Recevoir les sondages de fin de saison par email',
+      me.pref_email_feedback !== false,
+      "Invitation à donner ton avis à la clôture de chaque saison, et une éventuelle relance si tu n'as pas répondu."
+    ),
+    prefAlert,
+    el('button', { class: 'btn btn-ghost btn-sm', type: 'submit' }, 'Enregistrer mes préférences'),
+  ]);
+  prefForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const btn = prefForm.querySelector('button[type="submit"]');
+    const pref_email_feedback = prefForm.querySelector('#pref_email_feedback').checked;
+    setBusy(btn, true, 'Enregistrement…');
+    try {
+      await gestionApi('/api/member/preferences', { method: 'PUT', body: { pref_email_feedback } });
+      showAlert(prefAlert, 'ok', 'Préférences mises à jour.');
+    } catch (e) {
+      showAlert(prefAlert, 'error', e.message);
+    } finally {
+      setBusy(btn, false, 'Enregistrer mes préférences');
+    }
+  });
+
   section.appendChild(profileForm);
+  section.appendChild(el('hr', { class: 'divider' }));
+  section.appendChild(prefForm);
   section.appendChild(el('hr', { class: 'divider' }));
   section.appendChild(pwdForm);
   return section;
@@ -1282,4 +1376,5 @@ function render() {
   return goTo(authed ? '/' : '/connexion');
 }
 
+applyTheme(getTheme());
 render();
