@@ -929,6 +929,21 @@ function renderCertificatUpload() {
   return box;
 }
 
+// Statuts pour lesquels l'adhérent·e peut annuler elle/lui-même son
+// inscription depuis l'espace membre. Reflète exactement la règle
+// appliquée côté API (canMemberCancelRegistration dans calendrier/worker.js) :
+// une inscription déjà payée en ligne (HelloAsso) doit passer par un
+// remboursement géré par le bureau, jamais une simple bascule côté membre.
+// Dupliquer la règle ici n'est qu'un raccourci d'affichage (masquer un
+// bouton qui échouerait de toute façon) — l'API revalide tout côté serveur.
+const MEMBER_CANCELLABLE_STATUSES = ['en_attente', 'gratuit'];
+
+function isRegistrationCancellable(r) {
+  if (!MEMBER_CANCELLABLE_STATUSES.includes(r.paiement_status)) return false;
+  const startsAt = new Date(r.date_start).getTime();
+  return Number.isFinite(startsAt) && startsAt >= Date.now();
+}
+
 function renderRegistrationsSection(regRes) {
   const section = el('div', { class: 'section fade-rise fade-rise-2' }, [
     el('div', { class: 'section-head' }, [
@@ -950,19 +965,68 @@ function renderRegistrationsSection(regRes) {
     return section;
   }
   const list = el('div', { class: 'row-list' });
-  const statusLabels = { paye: ['Payé', 'badge-ok'], en_attente: ['En attente', 'badge-muted'], annule: ['Annulé', 'badge-warn'] };
+  const statusLabels = {
+    paye: ['Payé', 'badge-ok'],
+    gratuit: ['Gratuit', 'badge-ok'],
+    en_attente: ['En attente', 'badge-muted'],
+    annule: ['Annulé', 'badge-warn'],
+  };
   for (const r of items) {
     const [label, cls] = statusLabels[r.paiement_status] || [r.paiement_status || '—', 'badge-muted'];
+    const cancelSlot = el('div', { class: 'cancel-slot' });
+    const cancelBtn = isRegistrationCancellable(r)
+      ? el('button', {
+          class: 'btn btn-ghost btn-sm', type: 'button',
+          onclick: () => renderCancelConfirm(cancelSlot, r),
+        }, 'Annuler')
+      : null;
+
     list.appendChild(el('div', { class: 'row' }, [
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, r.title || 'Événement'),
         el('div', { class: 'row-sub' }, `${formatDate(r.date_start)}${r.lieu ? ' · ' + r.lieu : ''}`),
       ]),
-      el('span', { class: `badge ${cls}` }, label),
+      el('div', { class: 'row-actions' }, [
+        el('span', { class: `badge ${cls}` }, label),
+        cancelBtn,
+      ]),
     ]));
+    list.appendChild(cancelSlot);
   }
   section.appendChild(list);
   return section;
+}
+
+// Confirmation en deux temps avant annulation : pas de window.confirm()
+// natif (hors charte visuelle du reste de l'app, cf. showToast plus haut),
+// un petit panneau inline à la place, sur le même principe que order-items.
+function renderCancelConfirm(slot, r) {
+  slot.innerHTML = '';
+  slot.appendChild(el('div', { class: 'cancel-confirm' }, [
+    el('p', {}, `Annuler votre inscription à « ${r.title || 'cet événement'} » ?`),
+    el('div', { class: 'cancel-confirm-actions' }, [
+      el('button', {
+        class: 'btn btn-primary btn-sm', type: 'button',
+        onclick: (event) => confirmCancelRegistration(event.currentTarget, slot, r),
+      }, 'Oui, annuler'),
+      el('button', {
+        class: 'btn btn-ghost btn-sm', type: 'button',
+        onclick: () => { slot.innerHTML = ''; },
+      }, 'Non, garder mon inscription'),
+    ]),
+  ]));
+}
+
+async function confirmCancelRegistration(btn, slot, r) {
+  setBusy(btn, true, 'Annulation…');
+  try {
+    await calendrierApi(`/api/member/registrations/${r.id}`, { method: 'DELETE' });
+    showToast('Inscription annulée.', 'ok');
+    render();
+  } catch (e) {
+    slot.innerHTML = '';
+    slot.appendChild(alertBox('error', e.message));
+  }
 }
 
 function renderOrdersSection(orderRes) {

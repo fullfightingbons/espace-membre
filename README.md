@@ -21,7 +21,7 @@ est consommée ici en cross-origin, via un jeton signé émis par `gestion`.
    gestion.americanfullfightingbons.fr   boutique.…fr    calendrier.…fr
    /api/member/login, /me,               /api/member/    /api/member/
    /activation/*, /password/*,           orders          registrations
-   /documents/certificat
+   /documents/certificat                                 (+ annulation)
 ```
 
 Le jeton est émis uniquement par `gestion` (source de vérité de l'identité
