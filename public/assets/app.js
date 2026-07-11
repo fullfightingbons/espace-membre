@@ -97,6 +97,18 @@ const boutiqueApi = (path, opts) => apiCall(API.boutique, path, opts);
 const calendrierApi = (path, opts) => apiCall(API.calendrier, path, opts);
 const siteApi = (path, opts) => apiCall(SITE_URL, path, opts);
 
+// Convertit une promesse en résultat de forme Promise.allSettled ({status,
+// value} ou {status, reason}), pour réutiliser telles quelles les fonctions
+// de rendu déjà écrites contre cette forme (renderNextEvent,
+// renderRegistrationsSection, renderOrdersSection, renderNewsSection...)
+// avec des appels indépendants qui ne se bloquent plus les uns les autres.
+function settled(promise) {
+  return promise.then(
+    (value) => ({ status: 'fulfilled', value }),
+    (reason) => ({ status: 'rejected', reason })
+  );
+}
+
 // ── Aides d'affichage ───────────────────────────────────────────────────
 function formatDate(value) {
   if (!value) return '—';
@@ -443,6 +455,17 @@ function renderSetPasswordForm(root, { title, endpoint, token, successMessage })
 }
 
 // ── Vue : tableau de bord ───────────────────────────────────────────────
+// Chargement en deux temps :
+// 1) /api/member/dashboard (gestion) est le SEUL appel bloquant : il
+//    regroupe en une authentification et un aller-retour uniques ce qui
+//    passait avant par trois appels distincts (/me, /diplomes, /annuaire —
+//    cf. gestion/src/index.ts, memberProfilePayload). Sans cette donnée, la
+//    page n'a de toute façon aucun sens.
+// 2) Stages (calendrier), commandes (boutique) et actualités (site) sont
+//    des origines indépendantes : chacune s'affiche dans son propre
+//    emplacement dès qu'elle répond, sans attendre ni bloquer les autres —
+//    contrairement à l'ancien Promise.allSettled global qui gardait
+//    l'écran entier en squelette jusqu'à la plus lente des 4 origines.
 async function renderDashboard(root) {
   if (!getToken()) return goTo('/connexion');
 
@@ -454,49 +477,42 @@ async function renderDashboard(root) {
   main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' }));
   main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem' }));
 
-  const [meRes, regRes, orderRes, diplomeRes, newsRes, annuaireRes, clubRes] = await Promise.allSettled([
-    gestionApi('/api/member/me'),
-    calendrierApi('/api/member/registrations'),
-    boutiqueApi('/api/member/orders'),
-    gestionApi('/api/member/diplomes'),
-    // Lecture publique (auth: false) : le fil d'actualités vient du site
-    // vitrine, pas de gestion, et ne doit jamais faire échouer le dashboard
-    // si le site est indisponible (cf. renderNewsSection, tolérant à l'échec).
-    siteApi('/api/bootstrap', { auth: false }),
-    gestionApi('/api/member/annuaire'),
-    // Lecture publique (auth: false) : /api/bootstrap sur gestion accepte les
-    // appels non authentifiés et ne renvoie alors que PUBLIC_CLUB_INFO_KEYS
-    // (nom, adresse, siret, etc. — cf. src/index.ts de gestion). Utilisé
-    // uniquement pour l'en-tête du reçu de cotisation généré côté client.
-    gestionApi('/api/bootstrap', { auth: false }),
-  ]);
-
-  main.innerHTML = '';
-
-  if (meRes.status === 'rejected') {
-    main.appendChild(alertBox('error', "Impossible de charger votre profil : " + meRes.reason.message));
+  let dashboardRes;
+  try {
+    dashboardRes = await gestionApi('/api/member/dashboard');
+  } catch (e) {
+    main.innerHTML = '';
+    main.appendChild(alertBox('error', "Impossible de charger votre profil : " + e.message));
     return;
   }
-  const me = meRes.value.data;
+  const me = dashboardRes.data.me;
+  const diplomeRes = { status: 'fulfilled', value: { data: dashboardRes.data.diplomes } };
+  const annuaireRes = { status: 'fulfilled', value: { data: dashboardRes.data.annuaire } };
 
+  main.innerHTML = '';
   main.appendChild(renderMemberCard(me));
 
-  const nextEvent = renderNextEvent(regRes);
-  if (nextEvent) main.appendChild(nextEvent);
-
-  const newsSection = renderNewsSection(newsRes);
-  if (newsSection) main.appendChild(newsSection);
+  // Emplacements réservés dans l'ordre d'affichage habituel, remplacés en
+  // place dès que leur requête répond — l'ordre visuel final est identique
+  // à avant, seul le moment d'apparition de chaque section change.
+  const nextEventSlot = el('div');
+  main.appendChild(nextEventSlot);
+  const newsSlot = el('div');
+  main.appendChild(newsSlot);
 
   main.appendChild(renderCertificatSection(me));
 
-  const bulletinSection = renderBulletinSection(me, clubRes);
+  const bulletinSection = renderBulletinSection(me);
   if (bulletinSection) main.appendChild(bulletinSection);
 
   const gradeSection = renderGradeSection(me, diplomeRes);
   if (gradeSection) main.appendChild(gradeSection);
 
-  main.appendChild(renderRegistrationsSection(regRes));
-  main.appendChild(renderOrdersSection(orderRes));
+  const registrationsSlot = el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' });
+  main.appendChild(registrationsSlot);
+  const ordersSlot = el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' });
+  main.appendChild(ordersSlot);
+
   main.appendChild(renderAccountSection(me));
 
   const annuaireSection = renderAnnuaireSection(annuaireRes);
@@ -506,6 +522,26 @@ async function renderDashboard(root) {
     'Une question sur votre dossier ? Écrivez à ',
     el('a', { href: 'mailto:fullfightingbons@gmail.com' }, 'fullfightingbons@gmail.com'),
   ]));
+
+  // Stages/inscriptions (calendrier) : alimente à la fois le prochain
+  // rendez-vous en haut de page et la liste complète plus bas.
+  settled(calendrierApi('/api/member/registrations')).then((regRes) => {
+    const nextEvent = renderNextEvent(regRes);
+    if (nextEvent) nextEventSlot.replaceWith(nextEvent); else nextEventSlot.remove();
+    registrationsSlot.replaceWith(renderRegistrationsSection(regRes));
+  });
+
+  // Commandes boutique.
+  settled(boutiqueApi('/api/member/orders')).then((orderRes) => {
+    ordersSlot.replaceWith(renderOrdersSection(orderRes));
+  });
+
+  // Actualités du club : lecture publique sur le site vitrine, tolérante à
+  // l'échec (cf. renderNewsSection) — ne doit jamais retarder le reste.
+  settled(siteApi('/api/bootstrap', { auth: false })).then((newsRes) => {
+    const newsSection = renderNewsSection(newsRes);
+    if (newsSection) newsSlot.replaceWith(newsSection); else newsSlot.remove();
+  });
 }
 
 function renderMemberCard(me) {
@@ -622,7 +658,7 @@ function renderAnnuaireSection(annuaireRes) {
 // inscription-americanfullfightingbons. Ne s'affiche que si ce document
 // existe déjà (bulletin_disponible) : un adhérent créé manuellement par le
 // bureau sans passer par le formulaire d'inscription n'en aura pas.
-function renderBulletinSection(me, clubRes) {
+function renderBulletinSection(me) {
   const hasReceipt = Number(me.cotisation) > 0;
   if (!me.bulletin_disponible && !hasReceipt) return null;
 
@@ -642,7 +678,10 @@ function renderBulletinSection(me, clubRes) {
         el('div', { class: 'row-title' }, 'Reçu de cotisation'),
         el('div', { class: 'row-sub' }, `${formatMoney(me.cotisation)} · saison ${seasonFromDateFr(me.date_inscription)}`),
       ]),
-      el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => printCotisationReceipt(me, clubRes) }, 'Imprimer'),
+      el('button', {
+        class: 'btn btn-ghost btn-sm', type: 'button',
+        onclick: (event) => printCotisationReceipt(event.currentTarget, me),
+      }, 'Imprimer'),
     ]));
   }
   return el('div', { class: 'section fade-rise' }, [
@@ -736,8 +775,22 @@ function buildCotisationReceiptHTML(me, clubRes) {
   </div>`;
 }
 
-function printCotisationReceipt(me, clubRes) {
-  printHtmlDocument(buildCotisationReceiptHTML(me, clubRes), `Reçu de cotisation`);
+// Les informations du club (nom, adresse, SIRET, logo) affichées en en-tête
+// du reçu ne sont chargées qu'à cet instant, au clic sur « Imprimer » — pas
+// au chargement du dashboard — car la plupart des membres n'impriment
+// jamais ce reçu dans une session donnée : ce serait sinon un aller-retour
+// réseau systématique pour une fonctionnalité rarement utilisée.
+// /api/bootstrap sur gestion accepte les appels non authentifiés et ne
+// renvoie alors que PUBLIC_CLUB_INFO_KEYS (nom, adresse, siret, etc.).
+async function printCotisationReceipt(btn, me) {
+  const originalLabel = btn.textContent;
+  setBusy(btn, true, 'Préparation…');
+  try {
+    const clubRes = await settled(gestionApi('/api/bootstrap', { auth: false }));
+    printHtmlDocument(buildCotisationReceiptHTML(me, clubRes), `Reçu de cotisation`);
+  } finally {
+    setBusy(btn, false, originalLabel);
+  }
 }
 
 // Équivalent de pwPrint() dans le back-office gestion : ouvre un nouvel
