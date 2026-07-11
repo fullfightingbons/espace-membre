@@ -9,12 +9,24 @@
 <link rel="icon" href="/assets/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Le tableau de bord tire des données en cross-origin dès son premier
+     rendu (gestion/boutique/calendrier/site) : préconnecter ici chevauche
+     DNS/TLS de ces origines avec le téléchargement de app.js, au lieu de
+     ne démarrer la négociation qu'au moment du premier fetch(). -->
+<link rel="preconnect" href="https://gestion.americanfullfightingbons.fr">
+<link rel="preconnect" href="https://boutique.americanfullfightingbons.fr">
+<link rel="preconnect" href="https://calendrier.americanfullfightingbons.fr">
+<link rel="preconnect" href="https://americanfullfightingbons.fr">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/style.css">
+<!-- ?v= à incrémenter à chaque déploiement touchant style.css/app.js : ces
+     fichiers ne sont pas servis via le Worker (cf. run_worker_first dans
+     wrangler.json), donc aucun en-tête ne peut garantir la fraîcheur du
+     cache — le paramètre de requête sert de cache-busting explicite. -->
+<link rel="stylesheet" href="/assets/style.css?v=20260711">
 </head>
 <body>
 <a class="skip-link" href="#app">Aller au contenu</a>
 <div id="app" role="main" aria-live="polite"></div>
-<script type="module" src="/assets/app.js"></script>
+<script type="module" src="/assets/app.js?v=20260711"></script>
 </body>
 </html>
