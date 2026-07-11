@@ -17,16 +17,21 @@
 <link rel="preconnect" href="https://boutique.americanfullfightingbons.fr">
 <link rel="preconnect" href="https://calendrier.americanfullfightingbons.fr">
 <link rel="preconnect" href="https://americanfullfightingbons.fr">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
-<!-- ?v= à incrémenter à chaque déploiement touchant style.css/app.js : ces
-     fichiers ne sont pas servis via le Worker (cf. run_worker_first dans
-     wrangler.json), donc aucun en-tête ne peut garantir la fraîcheur du
-     cache — le paramètre de requête sert de cache-busting explicite. -->
-<link rel="stylesheet" href="/assets/style.css?v=20260711">
+<!-- Graisses limitées à celles réellement utilisées dans style.css (400 par
+     défaut du corps de texte + 500/600/700) : Inter 800 et Sora 800
+     n'apparaissent dans aucune règle CSS et ne faisaient qu'alourdir la
+     feuille de style Google Fonts sans jamais être affichés. -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
+<!-- ?v= à incrémenter à chaque déploiement touchant les fichiers de
+     /assets : ces fichiers ne sont pas servis via le Worker (cf.
+     run_worker_first dans wrangler.json), donc aucun en-tête ne peut
+     garantir la fraîcheur du cache — le paramètre de requête sert de
+     cache-busting explicite. -->
+<link rel="stylesheet" href="/assets/style.css?v=20260712">
 </head>
 <body>
 <a class="skip-link" href="#app">Aller au contenu</a>
 <div id="app" role="main" aria-live="polite"></div>
-<script type="module" src="/assets/app.js?v=20260711"></script>
+<script type="module" src="/assets/app.js?v=20260712"></script>
 </body>
 </html>
