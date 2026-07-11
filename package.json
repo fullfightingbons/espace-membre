@@ -9,7 +9,7 @@
 	"scripts": {
 		"cf-typegen": "wrangler types",
 		"typecheck": "tsc --noEmit",
-		"check": "tsc --noEmit && wrangler deploy --dry-run",
+		"check": "tsc --noEmit && node --check public/assets/app.js && wrangler deploy --dry-run",
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev"
 	}

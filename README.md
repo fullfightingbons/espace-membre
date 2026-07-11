@@ -20,9 +20,14 @@ est consommée ici en cross-origin, via un jeton signé émis par `gestion`.
               ▼                       ▼                       ▼
    gestion.americanfullfightingbons.fr   boutique.…fr    calendrier.…fr
    /api/member/login, /me,               /api/member/    /api/member/
-   /activation/*, /password/*,           orders          registrations
-   /documents/certificat                                 (+ annulation)
+   /dashboard, /activation/*,            orders          registrations
+   /password/*, /documents/certificat                    (+ annulation)
 ```
+
+`/api/member/dashboard` regroupe `/me` + `/diplomes` + `/annuaire` en un
+seul aller-retour (une seule authentification côté gestion) : c'est
+l'unique appel bloquant du tableau de bord. Les routes individuelles
+`/me`, `/diplomes`, `/annuaire` restent disponibles telles quelles.
 
 Le jeton est émis uniquement par `gestion` (source de vérité de l'identité
 adhérent) et vérifié indépendamment par `boutique` et `calendrier` grâce à un
@@ -58,6 +63,19 @@ des données externes).
 4. Un lien vers cet espace est à ajouter dans la navigation du site
    principal (`site-americanfullfightingbons`) — non fait automatiquement.
 
+## Assets statiques et cache
+
+`public/assets/` (app.js, style.css, logo.png) est servi directement par le
+edge cache de Cloudflare, sans passer par ce Worker (`run_worker_first` dans
+`wrangler.json` est scopé à `["/*", "!/assets/*"]`) — plus rapide, et ces
+fichiers n'ont de toute façon pas besoin des en-têtes de sécurité posés par
+`src/index.ts` (CSP/X-Frame-Options n'ont d'effet que sur le document HTML
+qui les reçoit, pas sur une image ou un CSS servi seul). En contrepartie,
+aucun en-tête ne garantit la fraîcheur du cache pour ces fichiers : `index.html`
+référence `style.css`/`app.js` avec un paramètre `?v=AAAAMMJJ` à incrémenter
+à chaque déploiement qui les modifie, pour forcer les navigateurs à
+recharger la bonne version plutôt que de servir une copie en cache.
+
 ## Développement local
 
 ```bash
@@ -68,6 +86,6 @@ npm run dev
 ## Vérifications avant déploiement
 
 ```bash
-npm run typecheck   # tsc --noEmit
-npm run check       # + wrangler deploy --dry-run
+npm run typecheck   # tsc --noEmit (src/index.ts uniquement)
+npm run check        # + node --check public/assets/app.js (JS brut, non couvert par tsc) + wrangler deploy --dry-run
 ```
