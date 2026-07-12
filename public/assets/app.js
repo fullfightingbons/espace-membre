@@ -22,6 +22,38 @@ const SITE_URL = 'https://americanfullfightingbons.fr';
 // Lien vers lequel rediriger un·e adhérent·e dont la cotisation n'est pas à
 // jour : le formulaire de ré-inscription en ligne du club.
 const RENEWAL_URL = 'https://inscription.americanfullfightingbons.fr/';
+
+// Encode les infos déjà connues du membre dans le lien de réinscription,
+// pour que le formulaire (inscription.js, fonction applyDraft) les
+// préremplisse. Non signé volontairement : ces champs sont déjà visibles
+// par le membre dans son propre espace, et le formulaire de réinscription
+// revérifie indépendamment l'éligibilité (nom/prénom/naissance/email) côté
+// serveur avant d'accorder quoi que ce soit (tarif bureau, etc.) — un lien
+// modifié ne ferait donc que préremplir des champs que le membre pourrait
+// de toute façon saisir lui-même à la main.
+function buildRenewalUrl(me) {
+  const prefill = {
+    lastName: me.nom || undefined,
+    firstName: me.prenom || undefined,
+    birthDate: me.naissance || undefined,
+    address1: me.adresse || undefined,
+    postalCode: me.code_postal || undefined,
+    city: me.ville || undefined,
+    phonePrimary: me.telephone || undefined,
+    email: me.email || undefined,
+    typeInscription: 'renouvellement',
+  };
+  try {
+    const json = JSON.stringify(prefill);
+    const bytes = new TextEncoder().encode(json);
+    let binary = '';
+    bytes.forEach((b) => { binary += String.fromCharCode(b); });
+    const token = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return `${RENEWAL_URL}?prefill=${token}`;
+  } catch (e) {
+    return RENEWAL_URL;
+  }
+}
 const TOKEN_KEY = 'affbc_membre_token';
 const TOKEN_EXP_KEY = 'affbc_membre_token_exp';
 const REQUEST_TIMEOUT_MS = 15000;
@@ -607,7 +639,7 @@ function renderMemberCard(me) {
       // un lien de paiement direct court-circuiterait cette étape.
       cotisationOk
         ? el('button', { class: 'btn btn-ghost btn-sm no-print', type: 'button', onclick: () => window.print() }, '🖶 Imprimer / PDF')
-        : el('a', { class: 'btn btn-primary btn-sm no-print', href: RENEWAL_URL, target: '_blank', rel: 'noopener' }, 'Renouveler mon adhésion →'),
+        : el('a', { class: 'btn btn-primary btn-sm no-print', href: buildRenewalUrl(me), target: '_blank', rel: 'noopener' }, 'Renouveler mon adhésion →'),
     ]),
   ]);
 }
