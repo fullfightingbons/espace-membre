@@ -555,11 +555,15 @@ async function renderDashboard(root) {
   const diplomeRes = { status: 'fulfilled', value: { data: dashboardRes.data.diplomes } };
   const annuaireRes = { status: 'fulfilled', value: { data: dashboardRes.data.annuaire } };
   const cotisations = dashboardRes.data.cotisations || [];
+  const feedback = dashboardRes.data.feedback || null;
 
   main.innerHTML = '';
   const switcher = renderProfileSwitcher(profilesRes);
   if (switcher) main.appendChild(switcher);
   main.appendChild(renderMemberCard(me));
+
+  const feedbackBanner = renderFeedbackBanner(feedback);
+  if (feedbackBanner) main.appendChild(feedbackBanner);
 
   // Emplacements réservés dans l'ordre d'affichage habituel, remplacés en
   // place dès que leur requête répond — l'ordre visuel final est identique
@@ -615,8 +619,45 @@ async function renderDashboard(root) {
   });
 }
 
+// Bandeau "enquête de satisfaction en attente" : réutilise la page publique
+// existante (gestion/public/feedback.html) via le token déjà généré côté
+// feedback_recipients — pas de nouveau formulaire à maintenir ici.
+function renderFeedbackBanner(feedback) {
+  if (!feedback || !feedback.token) return null;
+  return el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'row' }, [
+      el('div', { class: 'row-main' }, [
+        el('div', { class: 'row-title' }, feedback.titre || 'Enquête de satisfaction'),
+        el('div', { class: 'row-sub' }, feedback.description || 'Le club aimerait avoir votre avis.'),
+      ]),
+      el('a', {
+        class: 'btn btn-primary btn-sm',
+        href: `${API.gestion}/feedback.html?token=${encodeURIComponent(feedback.token)}`,
+        target: '_blank', rel: 'noopener',
+      }, 'Répondre →'),
+    ]),
+  ]);
+}
+
+// Partagé entre la carte de membre et le sélecteur de profils (vue famille) :
+// une seule règle de calcul pour ne pas les laisser diverger silencieusement,
+// comme MEMBER_ADHERENT_FIELDS avait divergé entre ses deux requêtes côté gestion.
+function isCotisationOk(paiement) {
+  return String(paiement || '').toLowerCase().includes('pay') || String(paiement || '').toLowerCase().includes('sold');
+}
+
+function certificatWarningLevel(certificatExpireLe) {
+  if (!certificatExpireLe) return null;
+  const d = new Date(certificatExpireLe);
+  if (isNaN(d.getTime())) return null;
+  const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
+  if (days < 0) return 'expired';
+  if (days <= 30) return 'soon';
+  return null;
+}
+
 function renderMemberCard(me) {
-  const cotisationOk = String(me.paiement || '').toLowerCase().includes('pay') || String(me.paiement || '').toLowerCase().includes('sold');
+  const cotisationOk = isCotisationOk(me.paiement);
   return el('div', { class: 'member-card fade-rise' }, [
     el('div', { class: 'member-card-top' }, [
       el('div', {}, [
@@ -638,7 +679,10 @@ function renderMemberCard(me) {
       // coordonnées et, le cas échéant, de repasser commande de vêtements —
       // un lien de paiement direct court-circuiterait cette étape.
       cotisationOk
-        ? el('button', { class: 'btn btn-ghost btn-sm no-print', type: 'button', onclick: () => window.print() }, '🖶 Imprimer / PDF')
+        ? el('div', { class: 'no-print', style: 'display:flex;gap:.5rem' }, [
+            el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => window.print() }, '🖶 Imprimer / PDF'),
+            el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: printAttestationCotisation }, '📄 Attestation'),
+          ])
         : el('a', { class: 'btn btn-primary btn-sm no-print', href: buildRenewalUrl(me), target: '_blank', rel: 'noopener' }, 'Renouveler mon adhésion →'),
     ]),
   ]);
@@ -666,9 +710,24 @@ function renderProfileSwitcher(profilesRes) {
       onclick: () => switchProfile(p.id),
     };
     if (isActive) attrs.disabled = true; // cf. checkboxField : n'ajouter la clé que si vrai
+
+    // Vue famille : badges cotisation/certificat, pour voir d'un coup d'œil
+    // qui a besoin de quoi sans avoir à basculer sur chaque profil.
+    const badges = [];
+    if (!isCotisationOk(p.paiement)) {
+      badges.push(el('span', { class: 'profile-pill-badge', title: 'Cotisation à renouveler', 'aria-label': 'Cotisation à renouveler' }, '⚠️'));
+    }
+    const certWarn = certificatWarningLevel(p.certificat_expire_le);
+    if (certWarn === 'expired') {
+      badges.push(el('span', { class: 'profile-pill-badge', title: 'Certificat médical expiré', 'aria-label': 'Certificat médical expiré' }, '⛔'));
+    } else if (certWarn === 'soon') {
+      badges.push(el('span', { class: 'profile-pill-badge', title: 'Certificat médical à renouveler bientôt', 'aria-label': 'Certificat médical à renouveler bientôt' }, '⏳'));
+    }
+
     wrap.appendChild(el('button', attrs, [
       el('span', { 'aria-hidden': 'true' }, p.isSelf ? '👤' : '🧒'),
       ` ${p.prenom || ''} ${p.nom || ''}`.trim(),
+      ...badges,
     ]));
   }
   return wrap;
@@ -1018,6 +1077,10 @@ async function openPdfForPrint(path, errorFallback) {
 
 async function printNotation() {
   await openPdfForPrint('/api/member/documents/notation', 'Fiche de notation indisponible.');
+}
+
+async function printAttestationCotisation() {
+  await openPdfForPrint('/api/member/documents/attestation-cotisation', 'Attestation indisponible.');
 }
 
 async function downloadDiplome(id, titre) {
