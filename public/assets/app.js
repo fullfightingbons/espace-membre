@@ -109,7 +109,12 @@ async function apiCall(base, path, { method = 'GET', body, auth = true } = {}) {
     const message =
       (payload && (payload.error?.message || payload.error)) ||
       `Une erreur est survenue (${response.status}).`;
-    throw new Error(typeof message === 'string' ? message : 'Une erreur est survenue.');
+    // TEMPORAIRE (diagnostic) : affiche payload.error.detail (cf. gestion,
+    // catch global) quand présent — à retirer avec la modif côté gestion
+    // une fois la cause du 500 trouvée.
+    const detail = payload && payload.error?.detail;
+    const fullMessage = detail ? `${message} — ${detail}` : message;
+    throw new Error(typeof fullMessage === 'string' ? fullMessage : 'Une erreur est survenue.');
   }
   return payload;
 }
