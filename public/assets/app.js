@@ -505,8 +505,15 @@ async function renderDashboard(root) {
   main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem' }));
 
   let dashboardRes;
+  let profilesRes;
   try {
-    dashboardRes = await gestionApi('/api/member/dashboard');
+    [dashboardRes, profilesRes] = await Promise.all([
+      gestionApi('/api/member/dashboard'),
+      // Tolérant à l'échec (settled) : le sélecteur de profils est un
+      // complément au tableau de bord, pas un prérequis — un souci réseau ne
+      // doit jamais empêcher l'affichage du reste.
+      settled(gestionApi('/api/member/profiles')),
+    ]);
   } catch (e) {
     main.innerHTML = '';
     main.appendChild(alertBox('error', "Impossible de charger votre profil : " + e.message));
@@ -518,6 +525,8 @@ async function renderDashboard(root) {
   const cotisations = dashboardRes.data.cotisations || [];
 
   main.innerHTML = '';
+  const switcher = renderProfileSwitcher(profilesRes);
+  if (switcher) main.appendChild(switcher);
   main.appendChild(renderMemberCard(me));
 
   // Emplacements réservés dans l'ordre d'affichage habituel, remplacés en
@@ -545,6 +554,8 @@ async function renderDashboard(root) {
 
   const annuaireSection = renderAnnuaireSection(annuaireRes);
   if (annuaireSection) main.appendChild(annuaireSection);
+
+  main.appendChild(renderContactSection());
 
   root.appendChild(el('footer', { class: 'app-footer' }, [
     'Une question sur votre dossier ? Écrivez à ',
@@ -590,11 +601,55 @@ function renderMemberCard(me) {
         el('span', { class: 'stamp-dot' }),
         cotisationOk ? 'Cotisation à jour' : `Cotisation : ${me.paiement || 'à régulariser'}`,
       ]),
+      // Toujours vers le site d'inscription (jamais un lien HelloAsso
+      // direct) : c'est ce formulaire qui permet de mettre à jour les
+      // coordonnées et, le cas échéant, de repasser commande de vêtements —
+      // un lien de paiement direct court-circuiterait cette étape.
       cotisationOk
         ? el('button', { class: 'btn btn-ghost btn-sm no-print', type: 'button', onclick: () => window.print() }, '🖶 Imprimer / PDF')
         : el('a', { class: 'btn btn-primary btn-sm no-print', href: RENEWAL_URL, target: '_blank', rel: 'noopener' }, 'Renouveler mon adhésion →'),
     ]),
   ]);
+}
+
+// ── Multi-comptes / parent-enfant ──────────────────────────────────────────
+// Sélecteur de profils : n'apparaît que si le compte connecté a accès à plus
+// d'un profil (le sien + au moins un enfant sous tutelle, cf.
+// GET /api/member/profiles côté gestion). Basculer rappelle
+// POST /api/member/profiles/switch, qui réémet un jeton portant le nouveau
+// profil actif — même mécanisme que le changement de mot de passe
+// (renderAccountSection) : un nouveau jeton signé plutôt qu'une session
+// modifiable côté serveur.
+function renderProfileSwitcher(profilesRes) {
+  if (profilesRes.status !== 'fulfilled') return null;
+  const { profiles, activeAdherentId } = profilesRes.value.data || {};
+  if (!Array.isArray(profiles) || profiles.length < 2) return null;
+
+  const wrap = el('div', { class: 'profile-switcher fade-rise', role: 'group', 'aria-label': 'Basculer entre les profils du foyer' });
+  for (const p of profiles) {
+    const isActive = String(p.id) === String(activeAdherentId);
+    const attrs = {
+      class: `profile-pill${isActive ? ' profile-pill-active' : ''}`,
+      type: 'button',
+      onclick: () => switchProfile(p.id),
+    };
+    if (isActive) attrs.disabled = true; // cf. checkboxField : n'ajouter la clé que si vrai
+    wrap.appendChild(el('button', attrs, [
+      el('span', { 'aria-hidden': 'true' }, p.isSelf ? '👤' : '🧒'),
+      ` ${p.prenom || ''} ${p.nom || ''}`.trim(),
+    ]));
+  }
+  return wrap;
+}
+
+async function switchProfile(adherentId) {
+  try {
+    const res = await gestionApi('/api/member/profiles/switch', { method: 'POST', body: { adherentId } });
+    if (isPlausibleToken(res?.data?.token)) setToken(res.data.token, res.data.expiresAt);
+    window.location.reload();
+  } catch (e) {
+    showToast(e.message || 'Impossible de changer de profil.', 'error');
+  }
 }
 
 // N'affiche rien tant que /api/member/registrations ne retourne aucune
@@ -1355,6 +1410,50 @@ function renderAccountSection(me) {
   section.appendChild(el('hr', { class: 'divider' }));
   section.appendChild(pwdForm);
   return section;
+}
+
+// Messagerie / contact rapide avec le bureau (POST /api/member/contact,
+// gestion) : envoie un email via Brevo à l'adresse du club sans jamais
+// l'exposer côté client — contrairement au lien mailto: du pied de page
+// (renderDashboard), qui reste affiché tel quel pour qui préfère sa propre
+// messagerie.
+function renderContactSection() {
+  const alert = el('div');
+  const form = el('form', { id: 'contact-form' }, [
+    textField('contact-subject', 'Objet', ''),
+    el('div', { class: 'field' }, [
+      el('label', { for: 'contact-message' }, 'Message'),
+      el('textarea', { id: 'contact-message', name: 'contact-message', rows: '5', required: true }),
+    ]),
+    alert,
+    el('button', { class: 'btn btn-primary btn-sm', type: 'submit' }, 'Envoyer au bureau'),
+  ]);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const btn = form.querySelector('button[type="submit"]');
+    const subject = form.querySelector('#contact-subject').value.trim();
+    const message = form.querySelector('#contact-message').value.trim();
+    if (!subject || !message) {
+      showAlert(alert, 'error', 'Merci de renseigner un objet et un message.');
+      return;
+    }
+    setBusy(btn, true, 'Envoi…');
+    try {
+      await gestionApi('/api/member/contact', { method: 'POST', body: { subject, message } });
+      showAlert(alert, 'ok', 'Message envoyé — le bureau vous répondra directement par email.');
+      form.reset();
+    } catch (e) {
+      showAlert(alert, 'error', e.message);
+    } finally {
+      setBusy(btn, false, 'Envoyer au bureau');
+    }
+  });
+
+  return el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Contacter le bureau')]),
+    el('div', { class: 'section-note' }, "Votre message part par email sans révéler d'adresse en clair ; le bureau pourra vous répondre directement."),
+    form,
+  ]);
 }
 
 // ── Routeur ─────────────────────────────────────────────────────────────

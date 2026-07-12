@@ -168,12 +168,13 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
   display: block; font-size: .78rem; font-weight: 700; text-transform: uppercase;
   letter-spacing: .06em; color: var(--ink-soft); margin-bottom: .4rem;
 }
-.field input {
+.field input, .field textarea {
   width: 100%; font-family: var(--font-body); font-size: 1rem; padding: .8rem .9rem;
   border: 1.5px solid var(--line); border-radius: var(--radius-sm); background: var(--paper);
   color: var(--ink); transition: border-color .15s, box-shadow .15s;
 }
-.field input:focus { border-color: var(--red); box-shadow: 0 0 0 3px var(--red-wash); outline: none; }
+.field textarea { resize: vertical; min-height: 6rem; font-family: inherit; }
+.field input:focus, .field textarea:focus { border-color: var(--red); box-shadow: 0 0 0 3px var(--red-wash); outline: none; }
 .field-hint { font-size: .76rem; color: var(--muted); margin-top: .35rem; }
 
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
@@ -276,6 +277,15 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
 }
 .next-event-title { font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; margin: .2rem 0 .1rem; }
 .next-event-meta { font-size: .82rem; color: var(--muted); }
+
+.profile-switcher { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+.profile-pill {
+  display: inline-flex; align-items: center; gap: .4rem; padding: .5rem .9rem;
+  border-radius: 999px; border: 1.5px solid var(--line); background: var(--paper);
+  color: var(--ink-soft); font-size: .8rem; font-weight: 600; cursor: pointer;
+}
+.profile-pill:hover:not(:disabled) { border-color: var(--red); color: var(--ink); }
+.profile-pill-active { border-color: var(--red); background: var(--red-wash); color: var(--red-deep); cursor: default; }
 
 /* ── Impression de la carte de membre ────────────────────────────────── */
 @media print {
