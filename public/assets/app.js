@@ -656,6 +656,14 @@ function certificatWarningLevel(certificatExpireLe) {
   return null;
 }
 
+// Auto-déclaré depuis "Mon rôle dans le foyer" (préférences) — purement
+// cosmétique, remplace juste l'icône générique dans le sélecteur de profils.
+function familyRoleIcon(familyRole) {
+  if (familyRole === 'pere') return '👨';
+  if (familyRole === 'mere') return '👩';
+  return '👤';
+}
+
 function renderMemberCard(me) {
   const cotisationOk = isCotisationOk(me.paiement);
   return el('div', { class: 'member-card fade-rise' }, [
@@ -725,7 +733,7 @@ function renderProfileSwitcher(profilesRes) {
     }
 
     wrap.appendChild(el('button', attrs, [
-      el('span', { 'aria-hidden': 'true' }, p.isSelf ? '👤' : '🧒'),
+      el('span', { 'aria-hidden': 'true' }, p.isSelf ? familyRoleIcon(p.family_role) : '🧒'),
       ` ${p.prenom || ''} ${p.nom || ''}`.trim(),
       ...badges,
     ]));
@@ -1379,6 +1387,17 @@ function textField(id, label, value, type = 'text') {
   ]);
 }
 
+function selectField(id, label, options, selectedValue) {
+  return el('div', { class: 'field' }, [
+    el('label', { for: id }, label),
+    el('select', { id, name: id }, options.map(([value, text]) => {
+      const attrs = { value };
+      if (value === (selectedValue || '')) attrs.selected = true;
+      return el('option', attrs, text);
+    })),
+  ]);
+}
+
 // Attention : el() fait un setAttribute générique, donc passer `checked:
 // false` poserait quand même l'attribut (et cocherait la case). On
 // n'inclut la clé que lorsque la case doit être cochée.
@@ -1481,6 +1500,11 @@ function renderAccountSection(me) {
       me.pref_email_feedback !== false,
       "Invitation à donner ton avis à la clôture de chaque saison, et une éventuelle relance si tu n'as pas répondu."
     ),
+    selectField('family_role', 'Mon rôle dans le foyer', [
+      ['', 'Non précisé'],
+      ['pere', 'Père'],
+      ['mere', 'Mère'],
+    ], me.family_role),
     prefAlert,
     el('button', { class: 'btn btn-ghost btn-sm', type: 'submit' }, 'Enregistrer mes préférences'),
   ]);
@@ -1488,9 +1512,10 @@ function renderAccountSection(me) {
     event.preventDefault();
     const btn = prefForm.querySelector('button[type="submit"]');
     const pref_email_feedback = prefForm.querySelector('#pref_email_feedback').checked;
+    const family_role = prefForm.querySelector('#family_role').value || null;
     setBusy(btn, true, 'Enregistrement…');
     try {
-      await gestionApi('/api/member/preferences', { method: 'PUT', body: { pref_email_feedback } });
+      await gestionApi('/api/member/preferences', { method: 'PUT', body: { pref_email_feedback, family_role } });
       showAlert(prefAlert, 'ok', 'Préférences mises à jour.');
     } catch (e) {
       showAlert(prefAlert, 'error', e.message);
