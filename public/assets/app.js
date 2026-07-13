@@ -562,6 +562,9 @@ async function renderDashboard(root) {
   if (switcher) main.appendChild(switcher);
   main.appendChild(renderMemberCard(me));
 
+  const alertsBanner = renderAlertsBanner(me);
+  if (alertsBanner) main.appendChild(alertsBanner);
+
   const feedbackBanner = renderFeedbackBanner(feedback);
   if (feedbackBanner) main.appendChild(feedbackBanner);
 
@@ -646,14 +649,76 @@ function isCotisationOk(paiement) {
   return String(paiement || '').toLowerCase().includes('pay') || String(paiement || '').toLowerCase().includes('sold');
 }
 
-function certificatWarningLevel(certificatExpireLe) {
+function certificatDaysLeft(certificatExpireLe) {
   if (!certificatExpireLe) return null;
   const d = new Date(certificatExpireLe);
   if (isNaN(d.getTime())) return null;
-  const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
+  return Math.ceil((d.getTime() - Date.now()) / 86400000);
+}
+function certificatWarningLevel(certificatExpireLe) {
+  const days = certificatDaysLeft(certificatExpireLe);
+  if (days === null) return null;
   if (days < 0) return 'expired';
   if (days <= 30) return 'soon';
   return null;
+}
+
+// Bandeau d'alertes en haut de tableau de bord (certificat + cotisation du
+// profil actuellement affiché). Complète les badges ⚠️/⛔/⏳ du sélecteur de
+// profils (renderProfileSwitcher), qui ne renseignent que sur les *autres*
+// membres du foyer sans jamais détailler le profil actif — et n'existent
+// pas du tout pour un compte sans profil famille, qui n'avait sinon aucun
+// résumé avant de scroller jusqu'aux sections Certificat/Cotisation.
+// Ne s'affiche que s'il y a au moins une chose à signaler : pas de bruit
+// visuel pour un dossier à jour.
+function renderAlertsBanner(me) {
+  const items = [];
+
+  if (!isCotisationOk(me.paiement)) {
+    items.push({
+      level: 'warn',
+      text: "Votre cotisation n'est pas à jour.",
+      action: { label: 'Renouveler →', href: buildRenewalUrl(me), external: true },
+    });
+  }
+
+  const hasValidCert = Number(me.certificat) === 1;
+  const certLevel = certificatWarningLevel(me.certificat_expire_le);
+  if (!hasValidCert) {
+    items.push({
+      level: 'warn',
+      text: 'Aucun certificat médical à jour enregistré.',
+      action: { label: 'Déposer →', href: '#certificat-medical' },
+    });
+  } else if (certLevel === 'expired') {
+    items.push({
+      level: 'error',
+      text: `Votre certificat médical a expiré le ${formatDate(me.certificat_expire_le)}.`,
+      action: { label: 'Renouveler →', href: '#certificat-medical' },
+    });
+  } else if (certLevel === 'soon') {
+    const daysLeft = certificatDaysLeft(me.certificat_expire_le);
+    items.push({
+      level: 'warn',
+      text: `Votre certificat médical expire dans ${daysLeft} jour${daysLeft > 1 ? 's' : ''} (le ${formatDate(me.certificat_expire_le)}).`,
+      action: { label: 'Renouveler →', href: '#certificat-medical' },
+    });
+  }
+
+  if (!items.length) return null;
+
+  return el('div', { class: 'alerts-banner fade-rise', role: 'status' },
+    items.map((item) => el('div', { class: `alerts-banner-item alerts-banner-${item.level}` }, [
+      el('span', { 'aria-hidden': 'true' }, item.level === 'error' ? '⛔' : '⚠️'),
+      el('span', { class: 'alerts-banner-text' }, item.text),
+      item.action
+        ? el('a', {
+            class: 'alerts-banner-action', href: item.action.href,
+            ...(item.action.external ? { target: '_blank', rel: 'noopener' } : {}),
+          }, item.action.label)
+        : null,
+    ]))
+  );
 }
 
 // Auto-déclaré depuis "Mon rôle dans le foyer" (préférences) — purement
@@ -1119,11 +1184,11 @@ function renderCertificatSection(me) {
   const hasValidCert = Number(me.certificat) === 1;
   let expiryBadge = null;
   if (hasValidCert && me.certificat_expire_le) {
-    const daysLeft = Math.ceil((new Date(me.certificat_expire_le).getTime() - Date.now()) / 86400000);
-    if (daysLeft < 0) expiryBadge = el('span', { class: 'badge badge-warn' }, 'Expiré');
-    else if (daysLeft <= 30) expiryBadge = el('span', { class: 'badge badge-warn' }, `Expire dans ${daysLeft} j`);
+    const level = certificatWarningLevel(me.certificat_expire_le);
+    if (level === 'expired') expiryBadge = el('span', { class: 'badge badge-warn' }, 'Expiré');
+    else if (level === 'soon') expiryBadge = el('span', { class: 'badge badge-warn' }, `Expire dans ${certificatDaysLeft(me.certificat_expire_le)} j`);
   }
-  const section = el('div', { class: 'section fade-rise fade-rise-1' }, [
+  const section = el('div', { class: 'section fade-rise fade-rise-1', id: 'certificat-medical' }, [
     el('div', { class: 'section-head' }, [
       el('div', { class: 'section-title' }, 'Certificat médical'),
     ]),

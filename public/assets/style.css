@@ -278,6 +278,22 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
 .next-event-title { font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; margin: .2rem 0 .1rem; }
 .next-event-meta { font-size: .82rem; color: var(--muted); }
 
+/* ── Bandeau d'alertes (certificat / cotisation du profil affiché) ──────
+   Même langage visuel que .next-event (carte + accent en bordure gauche) :
+   doré pour un avertissement, rouge pour quelque chose déjà expiré/en
+   défaut — cohérent avec .badge-warn qui utilise déjà le rouge pour la
+   même sévérité ailleurs sur le tableau de bord. */
+.alerts-banner { display: flex; flex-direction: column; gap: .6rem; margin-bottom: 1.5rem; }
+.alerts-banner-item {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  background: var(--paper); border-radius: var(--radius-sm); padding: .8rem 1.05rem;
+  border: 1.5px solid var(--gold-soft); border-left: 4px solid var(--gold);
+}
+.alerts-banner-error { border-color: rgba(216,74,47,.25); border-left-color: var(--red); }
+.alerts-banner-text { flex: 1; min-width: 0; font-size: .87rem; color: var(--ink-soft); }
+.alerts-banner-action { flex: none; font-weight: 700; font-size: .82rem; color: var(--red); white-space: nowrap; }
+.alerts-banner-action:hover { text-decoration: underline; }
+
 .profile-switcher { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
 .profile-pill {
   display: inline-flex; align-items: center; gap: .4rem; padding: .5rem .9rem;
@@ -291,7 +307,7 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
 /* ── Impression de la carte de membre ────────────────────────────────── */
 @media print {
   body { background: #fff; }
-  .topbar, .app-footer, .section, .next-event, .toast-root, .skip-link { display: none !important; }
+  .topbar, .app-footer, .section, .next-event, .alerts-banner, .toast-root, .skip-link { display: none !important; }
   main { padding: 0; max-width: none; }
   .member-card { box-shadow: none; border: 1.5px solid var(--ink); }
   .no-print { display: none !important; }
