@@ -578,11 +578,14 @@ async function renderDashboard(root) {
 
   main.appendChild(renderCertificatSection(me));
 
-  const bulletinSection = renderBulletinSection(me, cotisations);
+  const bulletinSection = renderBulletinSection(me);
   if (bulletinSection) main.appendChild(bulletinSection);
 
-  const gradeSection = renderGradeSection(me, diplomeRes);
+  const gradeSection = renderGradeSection(me);
   if (gradeSection) main.appendChild(gradeSection);
+
+  const parcoursSection = renderParcoursSection(me, diplomeRes, cotisations);
+  if (parcoursSection) main.appendChild(parcoursSection);
 
   const registrationsSlot = el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' });
   main.appendChild(registrationsSlot);
@@ -927,46 +930,17 @@ function renderAnnuaireSection(annuaireRes) {
 // inscription-americanfullfightingbons. Ne s'affiche que si ce document
 // existe déjà (bulletin_disponible) : un adhérent créé manuellement par le
 // bureau sans passer par le formulaire d'inscription n'en aura pas.
-function renderBulletinSection(me, cotisations) {
-  const hasReceipt = Number(me.cotisation) > 0;
-  // `cotisations` (venant de /api/member/dashboard) est une ligne par saison,
-  // la plus récente en premier — donc déjà incluse dedans la saison en
-  // cours. Repli sur `me` seul si le tableau est absent/vide : couvre le cas
-  // où gestion n'expose pas encore ce champ (déploiement pas encore fait,
-  // ou ancien token mis en cache côté navigateur pointant vers une version
-  // antérieure de l'API).
-  const seasons = (Array.isArray(cotisations) && cotisations.length)
-    ? cotisations.filter((c) => Number(c.cotisation) > 0)
-    : (hasReceipt ? [{ cotisation: me.cotisation, paiement: me.paiement, date_inscription: me.date_inscription }] : []);
-
-  if (!me.bulletin_disponible && !seasons.length) return null;
-
-  const rows = [];
-  if (me.bulletin_disponible) {
-    rows.push(el('div', { class: 'row' }, [
+function renderBulletinSection(me) {
+  if (!me.bulletin_disponible) return null;
+  return el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon inscription')]),
+    el('div', { class: 'row' }, [
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, "Bulletin d'inscription"),
         el('div', { class: 'row-sub' }, "Formulaire rempli à l'adhésion"),
       ]),
       el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => printBulletin() }, 'Imprimer'),
-    ]));
-  }
-  seasons.forEach((s, i) => {
-    const season = s.saison || seasonFromDateFr(s.date_inscription);
-    rows.push(el('div', { class: 'row' }, [
-      el('div', { class: 'row-main' }, [
-        el('div', { class: 'row-title' }, i === 0 ? 'Reçu de cotisation' : `Reçu — saison ${season}`),
-        el('div', { class: 'row-sub' }, `${formatMoney(s.cotisation)} · saison ${season}`),
-      ]),
-      el('button', {
-        class: 'btn btn-ghost btn-sm', type: 'button',
-        onclick: (event) => printCotisationReceipt(event.currentTarget, { ...me, ...s }),
-      }, 'Imprimer'),
-    ]));
-  });
-  return el('div', { class: 'section fade-rise' }, [
-    el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon inscription')]),
-    ...rows,
+    ]),
   ]);
 }
 
@@ -1082,16 +1056,15 @@ function printHtmlDocument(html, title) {
   w.document.close();
 }
 
-function renderGradeSection(me, diplomeRes) {
+function renderGradeSection(me) {
   const grade = me.ceinture;
-  const diplomes = diplomeRes && diplomeRes.status === 'fulfilled' ? (diplomeRes.value.data || []) : [];
-  if (!grade && !diplomes.length && !me.notation_disponible) return null;
+  if (!grade && !me.notation_disponible) return null;
 
   const section = el('div', { class: 'section fade-rise' }, [
     el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon grade')]),
   ]);
   if (grade) {
-    section.appendChild(el('div', { class: 'row', style: (diplomes.length || me.notation_disponible) ? 'margin-bottom:.6rem' : '' }, [
+    section.appendChild(el('div', { class: 'row', style: me.notation_disponible ? 'margin-bottom:.6rem' : '' }, [
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, `Ceinture ${grade}`),
         me.numero_licence ? el('div', { class: 'row-sub' }, `Licence FFK n° ${me.numero_licence}`) : null,
@@ -1099,7 +1072,7 @@ function renderGradeSection(me, diplomeRes) {
     ]));
   }
   if (me.notation_disponible) {
-    section.appendChild(el('div', { class: 'row', style: diplomes.length ? 'margin-bottom:.6rem' : '' }, [
+    section.appendChild(el('div', { class: 'row' }, [
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, 'Fiche de notation'),
         el('div', { class: 'row-sub' }, 'Évaluation technique établie par un coach'),
@@ -1107,20 +1080,69 @@ function renderGradeSection(me, diplomeRes) {
       el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => printNotation() }, 'Imprimer'),
     ]));
   }
-  if (diplomes.length) {
-    const list = el('div', { class: 'row-list' });
-    for (const d of diplomes) {
-      list.appendChild(el('div', { class: 'row' }, [
+  return section;
+}
+
+// "Mon parcours" : fusionne les diplômes (ex-liste dans renderGradeSection)
+// et l'historique de cotisation par saison (ex-liste dans
+// renderBulletinSection) en une seule frise chronologique, plutôt que deux
+// sections séparées à parcourir indépendamment pour reconstituer le même
+// fil du temps. renderGradeSection garde le statut courant (ceinture,
+// fiche de notation) ; renderBulletinSection garde le bulletin
+// d'inscription — ce sont des accès rapides à un document, pas un
+// historique, donc ils restent séparés de la frise.
+function renderParcoursSection(me, diplomeRes, cotisations) {
+  const diplomes = diplomeRes && diplomeRes.status === 'fulfilled' ? (diplomeRes.value.data || []) : [];
+
+  // Même repli que l'ancien renderBulletinSection : si `cotisations` est
+  // absent/vide (déploiement gestion pas encore fait, ou jeton en cache
+  // pointant vers une version antérieure de l'API), on retombe sur `me`
+  // seul pour au moins montrer la saison en cours.
+  const hasReceipt = Number(me.cotisation) > 0;
+  const seasons = (Array.isArray(cotisations) && cotisations.length)
+    ? cotisations.filter((c) => Number(c.cotisation) > 0)
+    : (hasReceipt ? [{ cotisation: me.cotisation, paiement: me.paiement, date_inscription: me.date_inscription }] : []);
+
+  const items = [
+    ...diplomes.map((d) => ({
+      date: d.date_emission,
+      node: el('div', { class: 'row' }, [
         el('div', { class: 'row-main' }, [
-          el('div', { class: 'row-title' }, d.titre || 'Diplôme'),
-          el('div', { class: 'row-sub' }, `${formatDate(d.date_emission)}${d.saison ? ' · Saison ' + d.saison : ''}`),
+          el('div', { class: 'row-title' }, `🥋 ${d.titre || 'Diplôme'}`),
+          el('div', { class: 'row-sub' }, [
+            formatDate(d.date_emission),
+            d.saison ? ` · Saison ${d.saison}` : '',
+            d.delivre_par ? ` · Délivré par ${d.delivre_par}` : '',
+          ].join('')),
         ]),
         el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => downloadDiplome(d.id, d.titre) }, 'Télécharger'),
-      ]));
-    }
-    section.appendChild(list);
-  }
-  return section;
+      ]),
+    })),
+    ...seasons.map((s) => {
+      const season = s.saison || seasonFromDateFr(s.date_inscription);
+      return {
+        date: s.date_inscription,
+        node: el('div', { class: 'row' }, [
+          el('div', { class: 'row-main' }, [
+            el('div', { class: 'row-title' }, `📋 Inscription — saison ${season}`),
+            el('div', { class: 'row-sub' }, formatMoney(s.cotisation)),
+          ]),
+          el('button', {
+            class: 'btn btn-ghost btn-sm', type: 'button',
+            onclick: (event) => printCotisationReceipt(event.currentTarget, { ...me, ...s }),
+          }, 'Imprimer'),
+        ]),
+      };
+    }),
+  ];
+
+  if (!items.length) return null;
+  items.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+  return el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon parcours')]),
+    el('div', { class: 'row-list' }, items.map((it) => it.node)),
+  ]);
 }
 
 // Ouvre un PDF authentifié dans un nouvel onglet plutôt que de forcer un
