@@ -1616,7 +1616,87 @@ function renderAccountSection(me) {
   section.appendChild(prefForm);
   section.appendChild(el('hr', { class: 'divider' }));
   section.appendChild(pwdForm);
+  section.appendChild(el('hr', { class: 'divider' }));
+
+  // Chargé à part (comme les commandes boutique / inscriptions événements) :
+  // pas besoin de retarder l'affichage du reste de "Mon compte" pour une
+  // information consultée occasionnellement.
+  const rgpdSlot = el('div', { class: 'skeleton', style: 'height:3rem' });
+  section.appendChild(rgpdSlot);
+  settled(gestionApi('/api/member/deletion-request')).then((res) => {
+    rgpdSlot.replaceWith(renderDeletionRequestBlock(res));
+  });
+
   return section;
+}
+
+// Droit à l'effacement (RGPD, art. 17) : la demande est enregistrée
+// immédiatement, mais l'anonymisation réelle n'a lieu qu'une fois le délai
+// de conservation légal écoulé (5 ans après la fin de la dernière adhésion
+// active, calculé côté gestion) — jamais automatiquement, un staff doit
+// déclencher l'exécution depuis l'admin une fois la date passée.
+function renderDeletionRequestBlock(res) {
+  const wrap = el('div');
+  wrap.appendChild(el('div', { class: 'row-title', style: 'margin-bottom:.4rem' }, 'Suppression de mes données'));
+
+  if (res.status === 'rejected') {
+    wrap.appendChild(el('div', { class: 'row-sub' }, 'Statut de la demande indisponible pour le moment.'));
+    return wrap;
+  }
+
+  const existing = res.value.data;
+  const alertBox2 = el('div');
+
+  if (!existing || existing.statut === 'cancelled' || existing.statut === 'rejected') {
+    if (existing && existing.statut === 'rejected') {
+      wrap.appendChild(el('div', { class: 'row-sub', style: 'margin-bottom:.4rem' }, 'Une précédente demande a été refusée par le bureau.'));
+    }
+    wrap.appendChild(el('div', { class: 'row-sub', style: 'margin-bottom:.6rem' },
+      "Vous pouvez demander la suppression de vos données personnelles. Pour des raisons légales (obligations comptables), vos données sont conservées au minimum 5 ans après la fin de votre dernière adhésion active avant que la suppression ne soit effective ; l'historique de cotisation (montant, date) est conservé indéfiniment à titre comptable, sans vos coordonnées."
+    ));
+    wrap.appendChild(alertBox2);
+    const btn = el('button', { class: 'btn btn-ghost btn-sm', type: 'button' }, 'Demander la suppression de mes données');
+    btn.addEventListener('click', async () => {
+      if (!confirm('Confirmer la demande de suppression de vos données ?')) return;
+      setBusy(btn, true, 'Envoi…');
+      try {
+        const created = await gestionApi('/api/member/deletion-request', { method: 'POST' });
+        wrap.replaceWith(renderDeletionRequestBlock({ status: 'fulfilled', value: created }));
+      } catch (e) {
+        showAlert(alertBox2, 'error', e.message);
+        setBusy(btn, false, 'Demander la suppression de mes données');
+      }
+    });
+    wrap.appendChild(btn);
+    return wrap;
+  }
+
+  if (existing.statut === 'pending') {
+    const eligibleDate = formatDate(existing.eligible_at);
+    wrap.appendChild(el('div', { class: 'row-sub', style: 'margin-bottom:.6rem' },
+      `Demande enregistrée le ${formatDate(existing.requested_at)}. Vos données seront anonymisées à partir du ${eligibleDate} (délai légal de conservation).`
+    ));
+    wrap.appendChild(alertBox2);
+    const cancelBtn = el('button', { class: 'btn btn-ghost btn-sm', type: 'button' }, 'Annuler ma demande');
+    cancelBtn.addEventListener('click', async () => {
+      if (!confirm('Annuler votre demande de suppression ?')) return;
+      setBusy(cancelBtn, true, 'Annulation…');
+      try {
+        await gestionApi('/api/member/deletion-request', { method: 'DELETE' });
+        wrap.replaceWith(renderDeletionRequestBlock({ status: 'fulfilled', value: { data: null } }));
+      } catch (e) {
+        showAlert(alertBox2, 'error', e.message);
+        setBusy(cancelBtn, false, 'Annuler ma demande');
+      }
+    });
+    wrap.appendChild(cancelBtn);
+    return wrap;
+  }
+
+  // statut === 'done' : ne devrait normalement plus être consultable (le
+  // compte est supprimé), gardé par sécurité si jamais affiché quand même.
+  wrap.appendChild(el('div', { class: 'row-sub' }, 'Vos données ont été anonymisées.'));
+  return wrap;
 }
 
 // Messagerie / contact rapide avec le bureau (POST /api/member/contact,
