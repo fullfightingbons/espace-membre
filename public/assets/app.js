@@ -1408,7 +1408,13 @@ function renderOrdersSection(orderRes) {
     ]));
     return section;
   }
-  const statusLabels = { confirmed: ['Confirmée', 'badge-ok'], pending_payment: ['Paiement en attente', 'badge-muted'], payment_failed: ['Paiement échoué', 'badge-warn'] };
+  const statusLabels = {
+    confirmed: ['Confirmée', 'badge-ok'],
+    shipped: ['Expédiée', 'badge-ok'],
+    delivered: ['Livrée', 'badge-ok'],
+    pending_payment: ['Paiement en attente', 'badge-muted'],
+    payment_failed: ['Paiement échoué', 'badge-warn'],
+  };
   const list = el('div', { class: 'row-list' });
   for (const o of items) {
     const [label, cls] = statusLabels[o.status] || [o.status || '—', 'badge-muted'];
