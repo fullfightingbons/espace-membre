@@ -961,99 +961,24 @@ function seasonFromDateFr(dateStr) {
   return `${start}-${start + 1}`;
 }
 
-// Reçu de cotisation généré entièrement côté client (pas de PDF stocké sur
-// R2, contrairement au bulletin et à la fiche de notation) : même principe
-// que buildFacHTML()/pwPrint() dans le back-office gestion pour les ventes
-// et les reçus de don, appliqué ici à la cotisation d'adhésion.
-//
-// Hypothèses à vérifier côté club avant diffusion large :
-// - `cotisation` est supposé être le montant net réellement encaissé. Si ce
-//   n'est pas le cas (ex. montant brut avant réduction Pass Région), le
-//   reçu affichera un montant inexact — la réduction Pass Région
-//   (adherents.montant_pass_region) n'est volontairement pas soustraite ici
-//   faute de certitude sur ce point.
-// - `date_inscription` est utilisée comme date du reçu, faute de colonne
-//   dédiée à la date de paiement sur `adherents` (contrairement aux ventes
-//   manuelles côté gestion, qui ont date_paiement). Sur un renouvellement,
-//   vérifier que cette date est bien mise à jour par le worker inscription.
-//
-// Volontairement affiché comme un simple "reçu" (pas une "facture") et sans
-// aucune mention de déduction fiscale : une cotisation d'adhésion n'ouvre
-// pas droit à réduction d'impôt en France, contrairement à un don — ne pas
-// copier le bloc "66 % déductible" de buildFacHTML côté gestion ici.
-function buildCotisationReceiptHTML(me, clubRes) {
-  const club = clubRes && clubRes.status === 'fulfilled' ? (clubRes.value.data?.clubInfo || {}) : {};
-  const clubName = club.nom || 'AFFBC';
-  const montant = Number(me.cotisation) || 0;
-  const season = seasonFromDateFr(me.date_inscription);
-  const numero = `COT-${season.slice(0, 4)}-${String(me.numero_licence || '').replace(/[^A-Za-z0-9]/g, '') || 'ADH'}`;
-  const adresseMembre = [me.adresse, [me.code_postal, me.ville].filter(Boolean).join(' ')].filter(Boolean).join('<br>');
-
-  return `<div style="background:#fff;border:.5px solid #ddd;border-radius:10px;overflow:hidden;font-family:sans-serif;font-size:12px;color:#222">
-  <div style="background:#111;padding:16px 20px;display:flex;justify-content:space-between;align-items:center">
-  <div style="display:flex;align-items:center;gap:10px">
-  <div style="width:44px;height:44px;border-radius:50%;overflow:hidden;border:2px solid #D4AC0D;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">${club.logo ? `<img src="${escapeHtml(club.logo)}" style="width:100%;height:100%;object-fit:contain">` : '<span style="font-size:22px">🥊</span>'}</div>
-  <div><div style="color:#fff;font-size:12px;font-weight:500">${escapeHtml(clubName)}</div><div style="color:#aaa;font-size:10px;line-height:1.6">${escapeHtml(club.adresse || '')}<br>${escapeHtml(club.email || '')}</div></div>
-  </div>
-  <div style="text-align:right">
-  <div style="color:#D4AC0D;font-size:15px;font-weight:500">REÇU DE COTISATION</div>
-  <div style="color:#fff;font-size:11px;margin-top:2px">${escapeHtml(numero)}</div>
-  <div style="color:#888;font-size:10px">${formatDate(me.date_inscription)}</div>
-  </div>
-  </div>
-  <div style="padding:16px 20px">
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-  <div><div style="font-size:9px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Émetteur</div>
-  <p style="font-size:11px;line-height:1.6">${escapeHtml(clubName)}<br>${escapeHtml(club.adresse || '')}${club.siret ? `<br>SIRET : ${escapeHtml(club.siret)}` : ''}</p></div>
-  <div><div style="font-size:9px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Adhérent</div>
-  <p style="font-size:11px;line-height:1.6">${escapeHtml(`${me.prenom || ''} ${me.nom || ''}`.trim())}<br>${adresseMembre}</p></div>
-  </div>
-  <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px">
-  <thead><tr style="background:#111;color:#fff">
-  <th style="padding:5px 8px;text-align:left;font-weight:500">Désignation</th>
-  <th style="padding:5px 8px;text-align:right;font-weight:500">Montant</th>
-  </tr></thead>
-  <tbody><tr>
-  <td style="padding:5px 8px;border-bottom:.5px solid #eee">Cotisation adhésion — saison ${escapeHtml(season)}</td>
-  <td style="padding:5px 8px;border-bottom:.5px solid #eee;text-align:right;font-weight:500">${montant.toFixed(2)} €</td>
-  </tr></tbody>
-  </table>
-  <div style="display:flex;justify-content:flex-end">
-  <div style="min-width:200px">
-  <div style="display:flex;justify-content:space-between;padding:6px 10px;font-size:13px;font-weight:500;background:#111;color:#fff;border-radius:4px;margin-top:4px"><span>Total réglé</span><span>${montant.toFixed(2)} €</span></div>
-  </div>
-  </div>
-  <p style="font-size:10px;color:#888;margin-top:10px;padding-top:8px;border-top:.5px solid #eee">Statut : ${escapeHtml(me.paiement || '—')}. Ce document tient lieu de reçu de cotisation ; il n'ouvre pas droit à réduction d'impôt (à la différence d'un don).</p>
-  </div>
-  <div style="background:#111;padding:7px 20px;font-size:9px;color:#888;text-align:center">${escapeHtml(clubName)}${club.siret ? ` — SIRET ${escapeHtml(club.siret)}` : ''} — Association loi 1901 — TVA non applicable, art. 261-7-1°b CGI</div>
-  </div>`;
-}
-
 // Les informations du club (nom, adresse, SIRET, logo) affichées en en-tête
 // du reçu ne sont chargées qu'à cet instant, au clic sur « Imprimer » — pas
 // au chargement du dashboard — car la plupart des membres n'impriment
 // jamais ce reçu dans une session donnée : ce serait sinon un aller-retour
 // réseau systématique pour une fonctionnalité rarement utilisée.
-// /api/bootstrap sur gestion accepte les appels non authentifiés et ne
-// renvoie alors que PUBLIC_CLUB_INFO_KEYS (nom, adresse, siret, etc.).
 async function printCotisationReceipt(btn, me) {
   const originalLabel = btn.textContent;
   setBusy(btn, true, 'Préparation…');
   try {
-    const clubRes = await settled(gestionApi('/api/bootstrap', { auth: false }));
-    printHtmlDocument(buildCotisationReceiptHTML(me, clubRes), `Reçu de cotisation`);
+    // Le PDF harmonisé (gabarit noir/doré, identique aux autres documents du
+    // club) est désormais généré côté serveur par gestion — cf.
+    // GET /api/member/documents/recu-cotisation. Remplace l'ancien flux
+    // 100% client (buildCotisationReceiptHTML + window.print()) qui ne
+    // produisait pas un vrai fichier PDF téléchargeable.
+    await openPdfForPrint('/api/member/documents/recu-cotisation', 'Reçu de cotisation indisponible pour le moment.');
   } finally {
     setBusy(btn, false, originalLabel);
   }
-}
-
-// Équivalent de pwPrint() dans le back-office gestion : ouvre un nouvel
-// onglet, y écrit un document HTML autonome, déclenche l'impression.
-function printHtmlDocument(html, title) {
-  const w = window.open('', '_blank');
-  if (!w) { showToast("Impossible d'ouvrir la fenêtre d'impression (bloqueur de popup ?)."); return; }
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title><style>body{margin:20px;font-family:sans-serif}@media print{body{margin:0}}</style></head><body>${html}<script>setTimeout(()=>window.print(),300);</script></body></html>`);
-  w.document.close();
 }
 
 function renderGradeSection(me) {
