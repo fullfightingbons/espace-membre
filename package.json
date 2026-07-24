@@ -4,12 +4,14 @@
 	"private": true,
 	"devDependencies": {
 		"typescript": "5.9.3",
+		"vitest": "^2.1.0",
 		"wrangler": "^4.110.0"
 	},
 	"scripts": {
 		"cf-typegen": "wrangler types",
 		"typecheck": "tsc --noEmit",
-		"check": "tsc --noEmit && node --check public/assets/app.js && wrangler deploy --dry-run",
+		"test": "vitest run",
+		"check": "tsc --noEmit && node --check public/assets/app.js && vitest run && wrangler deploy --dry-run",
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev"
 	}
