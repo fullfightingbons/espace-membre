@@ -5,15 +5,15 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --sand: #f5efe4;
-  --sand-deep: #eadfc9;
+  --cream: #f5efe4;
+  --cream-deep: #eadfc9;
   --paper: #fffdf9;
   --ink: #1a2430;
   --ink-soft: #253242;
   --muted: #607080;
   --line: rgba(15,23,32,.14);
   --red: #d84a2f;
-  --red-deep: #9f2413;
+  --red-dark: #9f2413;
   --red-wash: rgba(216,74,47,.08);
   --gold: #d6ac54;
   --gold-soft: #f1e4c6;
@@ -29,13 +29,13 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 
 /* Thème sombre : mêmes noms de variables, valeurs inversées. Comme la
    quasi-totalité de la feuille de style consomme déjà ces variables
-   (var(--sand), var(--paper), var(--ink)...), les surcharger ici suffit à
+   (var(--cream), var(--paper), var(--ink)...), les surcharger ici suffit à
    basculer l'ensemble des composants sans dupliquer leurs règles. Le
    sceau/logo et les couleurs de marque (--red, --gold) restent identiques :
    seule la palette neutre (fond/texte) change. */
 [data-theme="dark"] {
-  --sand: #10171f;
-  --sand-deep: #182230;
+  --cream: #10171f;
+  --cream-deep: #182230;
   --paper: #182230;
   --ink: #eef1f5;
   --ink-soft: #cdd5df;
@@ -62,7 +62,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 html { scroll-behavior: smooth; }
 body {
   font-family: var(--font-body);
-  background: var(--sand);
+  background: var(--cream);
   background-image:
     radial-gradient(circle at 12% 8%, rgba(216,74,47,.05), transparent 40%),
     radial-gradient(circle at 88% 92%, rgba(214,172,84,.07), transparent 45%);
@@ -110,7 +110,7 @@ button { font-family: inherit; cursor: pointer; }
   text-decoration: none; transition: color .15s, border-color .15s, background .15s;
 }
 .crossnav a:hover, .crossnav a[aria-current="page"] {
-  color: #fff; border-color: var(--red); background: linear-gradient(135deg, var(--red), var(--red-deep));
+  color: #fff; border-color: var(--red); background: linear-gradient(135deg, var(--red), var(--red-dark));
 }
 .btn-logout {
   background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16); color: #fff;
@@ -187,14 +187,14 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
 .divider { border: none; border-top: 1px solid var(--line); margin: 1.5rem 0; }
 
 .order-items {
-  padding: .6rem .9rem .7rem; margin: -.4rem 0 .5rem; background: var(--sand);
+  padding: .6rem .9rem .7rem; margin: -.4rem 0 .5rem; background: var(--cream);
   border-radius: var(--radius-sm); font-size: .84rem; color: var(--ink-soft);
 }
 .order-item-line { padding: .2rem 0; }
 
 .cancel-slot:empty { display: none; }
 .cancel-confirm {
-  padding: .8rem .95rem; margin: -.2rem 0 .5rem; background: var(--sand);
+  padding: .8rem .95rem; margin: -.2rem 0 .5rem; background: var(--cream);
   border-radius: var(--radius-sm); font-size: .84rem; color: var(--ink-soft);
 }
 .cancel-confirm p { margin: 0 0 .65rem; }
@@ -216,7 +216,7 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
   border-radius: var(--radius-sm); padding: .85rem 1rem; font-size: .87rem; margin-bottom: 1.1rem;
   display: flex; gap: .6rem; align-items: flex-start; line-height: 1.4;
 }
-.alert-error { background: var(--red-wash); color: var(--red-deep); border: 1px solid rgba(216,74,47,.25); }
+.alert-error { background: var(--red-wash); color: var(--red-dark); border: 1px solid rgba(216,74,47,.25); }
 .alert-ok { background: var(--ok-wash); color: var(--ok); border: 1px solid rgba(60, 107, 69, .25); }
 
 .spinner {
@@ -232,7 +232,7 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
   border: 1.5px dashed var(--line); overflow: hidden;
 }
 .member-card::before {
-  content: ''; position: absolute; inset: 8px; border: 1px solid var(--sand-deep);
+  content: ''; position: absolute; inset: 8px; border: 1px solid var(--cream-deep);
   border-radius: 15px; pointer-events: none;
 }
 .member-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
@@ -301,7 +301,7 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
   color: var(--ink-soft); font-size: .8rem; font-weight: 600; cursor: pointer;
 }
 .profile-pill:hover:not(:disabled) { border-color: var(--red); color: var(--ink); }
-.profile-pill-active { border-color: var(--red); background: var(--red-wash); color: var(--red-deep); cursor: default; }
+.profile-pill-active { border-color: var(--red); background: var(--red-wash); color: var(--red-dark); cursor: default; }
 .profile-pill-badge { font-size: .85rem; line-height: 1; }
 
 /* ── Impression de la carte de membre ────────────────────────────────── */
@@ -341,8 +341,8 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
   text-transform: uppercase; letter-spacing: .05em; padding: .3rem .6rem; border-radius: 999px;
 }
 .badge-ok { background: var(--ok-wash); color: var(--ok); }
-.badge-warn { background: var(--red-wash); color: var(--red-deep); }
-.badge-muted { background: var(--sand-deep); color: var(--ink-soft); }
+.badge-warn { background: var(--red-wash); color: var(--red-dark); }
+.badge-muted { background: var(--cream-deep); color: var(--ink-soft); }
 .chip-list { display: flex; flex-wrap: wrap; gap: .5rem; }
 .annuaire-search {
   width: 100%; font-family: var(--font-body); font-size: .92rem; padding: .6rem .85rem;
@@ -358,7 +358,7 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
 .empty b { display: block; color: var(--ink-soft); font-size: .95rem; margin-bottom: .3rem; }
 
 .skeleton {
-  background: linear-gradient(90deg, var(--sand-deep) 25%, var(--paper) 37%, var(--sand-deep) 63%);
+  background: linear-gradient(90deg, var(--cream-deep) 25%, var(--paper) 37%, var(--cream-deep) 63%);
   background-size: 400% 100%; animation: shimmer 1.4s ease infinite; border-radius: var(--radius-sm);
   height: 3.3rem;
 }
@@ -366,7 +366,7 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
 
 .upload-box {
   border: 1.5px dashed var(--line); border-radius: var(--radius-sm); padding: 1.1rem;
-  background: var(--sand); display: flex; flex-direction: column; gap: .7rem;
+  background: var(--cream); display: flex; flex-direction: column; gap: .7rem;
 }
 .upload-row { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
 .file-input-label {
