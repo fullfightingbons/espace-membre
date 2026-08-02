@@ -591,6 +591,8 @@ async function renderDashboard(root) {
   main.appendChild(registrationsSlot);
   const ordersSlot = el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' });
   main.appendChild(ordersSlot);
+  const wishlistSlot = el('div', { class: 'skeleton', style: 'height:6rem;margin-bottom:1rem' });
+  main.appendChild(wishlistSlot);
 
   main.appendChild(renderAccountSection(me));
 
@@ -615,6 +617,14 @@ async function renderDashboard(root) {
   // Commandes boutique.
   settled(boutiqueApi('/api/member/orders')).then((orderRes) => {
     ordersSlot.replaceWith(renderOrdersSection(orderRes));
+  });
+
+  // Favoris boutique : pas de jeton de session côté boutique (l'ajout se
+  // fait depuis la boutique publique, sans connexion) — simple lecture par
+  // email, déjà connu ici puisque le membre est authentifié.
+  settled(boutiqueApi('/api/wishlist?email=' + encodeURIComponent(me.email || ''), { auth: false })).then((wishRes) => {
+    const wishSection = renderWishlistSection(wishRes, me.email);
+    if (wishSection) wishlistSlot.replaceWith(wishSection); else wishlistSlot.remove();
   });
 
   // Actualités du club : lecture publique sur le site vitrine, tolérante à
@@ -1228,12 +1238,60 @@ function isRegistrationCancellable(r) {
   return Number.isFinite(startsAt) && startsAt >= Date.now();
 }
 
+// ── Flux calendrier abonnable ──────────────────────────────────
+// Un seul ajout à l'agenda (Google Calendar, iOS...) qui se met à jour tout
+// seul ensuite, plutôt qu'un fichier .ics à retélécharger à chaque fois.
+let calendarSubscribeOpen = false;
+async function toggleCalendarSubscribe(box) {
+  calendarSubscribeOpen = !calendarSubscribeOpen;
+  box.innerHTML = '';
+  if (!calendarSubscribeOpen) return;
+  box.appendChild(el('div', { class: 'muted-note' }, 'Chargement…'));
+  try {
+    const res = await calendrierApi('/api/member/calendar-token', { method: 'POST' });
+    renderCalendarSubscribeLink(box, res.feed_url);
+  } catch (e) {
+    box.innerHTML = '';
+    box.appendChild(alertBox('error', "Impossible de générer le lien pour le moment : " + e.message));
+  }
+}
+function renderCalendarSubscribeLink(box, feedUrl) {
+  box.innerHTML = '';
+  const webcalUrl = feedUrl.replace(/^https?:\/\//, 'webcal://');
+  box.appendChild(el('div', { class: 'calendar-subscribe-panel' }, [
+    el('p', {}, "Ajoutez ce lien une seule fois à votre agenda (Google Calendar, iOS, Outlook…) : il se mettra à jour tout seul à chaque nouvelle inscription."),
+    el('div', { class: 'calendar-subscribe-row' }, [
+      el('input', { type: 'text', readonly: 'readonly', value: feedUrl, onClick: (e) => e.target.select() }),
+      el('button', { class: 'btn-ghost', type: 'button', onClick: async () => {
+        try { await navigator.clipboard.writeText(feedUrl); showToast('Lien copié', 'success'); }
+        catch { showToast("Impossible de copier automatiquement, sélectionnez le lien manuellement"); }
+      } }, 'Copier'),
+    ]),
+    el('div', { class: 'calendar-subscribe-row' }, [
+      el('a', { class: 'link-quiet', href: webcalUrl }, "Ouvrir dans l'agenda du téléphone"),
+      el('button', { class: 'link-quiet', type: 'button', onClick: async () => {
+        if (!confirm('Régénérer le lien ? L\'ancien lien cessera de fonctionner (à refaire dans votre agenda).')) return;
+        try {
+          const res = await calendrierApi('/api/member/calendar-token', { method: 'DELETE' });
+          renderCalendarSubscribeLink(box, res.feed_url);
+          showToast('Nouveau lien généré', 'success');
+        } catch (e) { showToast('Erreur lors de la régénération : ' + e.message); }
+      } }, 'Régénérer le lien'),
+    ]),
+  ]));
+}
+
 function renderRegistrationsSection(regRes) {
+  const subscribeBox = el('div', { class: 'calendar-subscribe', id: 'calendar-subscribe-box' });
   const section = el('div', { class: 'section fade-rise fade-rise-2' }, [
     el('div', { class: 'section-head' }, [
       el('div', { class: 'section-title' }, 'Mes inscriptions aux stages'),
-      el('a', { class: 'link-quiet', href: API.calendrier, target: '_blank', rel: 'noopener' }, "S'inscrire à un stage →"),
+      el('div', { class: 'section-head-actions' }, [
+        el('button', { class: 'link-quiet', type: 'button', onClick: () => toggleCalendarSubscribe(subscribeBox) }, "📅 Abonner mon agenda"),
+        el('a', { class: 'link-quiet', href: API.calendrier, target: '_blank', rel: 'noopener' }, "S'inscrire à un stage →"),
+      ]),
     ]),
+    subscribeBox,
   ]);
 
   if (regRes.status === 'rejected') {
@@ -1311,6 +1369,52 @@ async function confirmCancelRegistration(btn, slot, r) {
     slot.innerHTML = '';
     slot.appendChild(alertBox('error', e.message));
   }
+}
+
+function renderWishlistSection(wishRes, memberEmail) {
+  if (wishRes.status === 'rejected') {
+    return el('div', { class: 'section fade-rise fade-rise-3' }, [
+      el('div', { class: 'section-title' }, 'Mes favoris boutique'),
+      alertBox('error', 'Favoris indisponibles pour le moment : ' + wishRes.reason.message),
+    ]);
+  }
+  const items = wishRes.value.data || [];
+  if (!items.length) return null; // rien à afficher : pas de bruit pour un membre qui n'utilise pas les favoris
+
+  const section = el('div', { class: 'section fade-rise fade-rise-3' }, [
+    el('div', { class: 'section-head' }, [
+      el('div', { class: 'section-title' }, 'Mes favoris boutique'),
+      el('a', { class: 'link-quiet', href: API.boutique, target: '_blank', rel: 'noopener' }, 'Voir la boutique →'),
+    ]),
+  ]);
+  const list = el('div', { class: 'row-list' });
+  for (const it of items) {
+    const inStock = it.size_stocks
+      ? Object.values(JSON.parse(typeof it.size_stocks === 'string' ? it.size_stocks : JSON.stringify(it.size_stocks))).some((q) => Number(q) > 0)
+      : Number(it.stock) > 0;
+    const row = el('div', { class: 'row' }, [
+      el('div', { class: 'row-main' }, [
+        el('div', { class: 'row-title' }, it.name),
+        el('div', { class: 'row-sub' }, `${formatMoney(it.price)}${inStock ? '' : ' · rupture de stock'}`),
+      ]),
+      el('div', { class: 'row-actions' }, [
+        el('button', {
+          class: 'btn btn-ghost btn-sm', type: 'button',
+          onclick: async () => {
+            row.style.opacity = '.4';
+            try {
+              await boutiqueApi('/api/wishlist/' + it.product_id + '?email=' + encodeURIComponent(memberEmail || ''), { method: 'DELETE', auth: false });
+              row.remove();
+              if (!list.children.length) section.remove();
+            } catch { row.style.opacity = '1'; showToast('Erreur, réessayez'); }
+          },
+        }, 'Retirer'),
+      ]),
+    ]);
+    list.appendChild(row);
+  }
+  section.appendChild(list);
+  return section;
 }
 
 function renderOrdersSection(orderRes) {
