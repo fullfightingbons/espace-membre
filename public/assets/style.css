@@ -397,7 +397,7 @@ main.dashboard { max-width: var(--dashboard-max); }
 .row-main { min-width: 0; }
 .row-title { font-weight: 600; font-size: .93rem; margin-bottom: .15rem; overflow-wrap: anywhere; }
 .row-sub { font-size: .78rem; color: var(--muted); }
-.row-actions { flex: none; display: flex; align-items: center; gap: .6rem; }
+.row-actions { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .6rem; }
 
 /* Variante tabulaire : ajoute une colonne date alignée pour les listes
    chronologiques denses (parcours, inscriptions, commandes — cf. .row-date
