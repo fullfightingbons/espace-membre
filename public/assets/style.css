@@ -25,6 +25,17 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   --shadow-sm: 0 8px 20px rgba(7,17,29,.08);
   --font-display: 'Sora', sans-serif;
   --font-body: 'Inter', sans-serif;
+  /* Largeur du tableau de bord (grille à deux colonnes, cf. .dashboard-grid)
+     — plus large que le reste du site (main{max-width:760px} inchangé pour
+     l'auth) : nav-wrap reprend la même valeur pour que la barre du haut
+     s'aligne avec le contenu plutôt que de rester bloquée à 760px. */
+  --dashboard-max: 1180px;
+  /* Survol des rangées de liste (.row) : un voile semi-transparent plutôt
+     qu'une couleur pleine, pour rester visible quel que soit le fond sur
+     lequel la rangée est posée (transparente par défaut, elle laisse voir
+     le fond de .section) — une couleur pleine identique à --cream y serait
+     invisible. */
+  --row-hover: rgba(15,23,32,.035);
 }
 
 /* Thème sombre : mêmes noms de variables, valeurs inversées. Comme la
@@ -46,6 +57,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   --ok-wash: rgba(60,107,69,.18);
   --shadow: 0 20px 50px rgba(0,0,0,.45);
   --shadow-sm: 0 8px 20px rgba(0,0,0,.35);
+  --row-hover: rgba(255,255,255,.045);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -83,7 +95,7 @@ button { font-family: inherit; cursor: pointer; }
 .skip-link:focus { left: 0; }
 
 /* ── Top bar ─────────────────────────────────────────────────────────── */
-.nav-wrap { max-width: 760px; margin: 0 auto; padding: 1rem clamp(1rem, 4vw, 1.4rem) 0; display: flex; flex-direction: column; gap: .6rem; }
+.nav-wrap { max-width: var(--dashboard-max); margin: 0 auto; padding: 1rem clamp(1rem, 4vw, 1.4rem) 0; display: flex; flex-direction: column; gap: .6rem; }
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 1rem;
@@ -126,6 +138,27 @@ button { font-family: inherit; cursor: pointer; }
 .btn-theme:hover { border-color: var(--gold); background: rgba(214,172,84,.18); }
 
 main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5rem) 4rem; }
+
+/* ── Tableau de bord : grille à deux colonnes ────────────────────────────
+   Le reste du site (auth, formulaires) garde main{max-width:760px} tel
+   quel : seul le tableau de bord (main.dashboard) s'élargit, pour poser une
+   colonne principale (statut du membre, activité en cours : certificat,
+   parcours, inscriptions, commandes) à côté d'une colonne secondaire
+   (actualités, informations de référence, compte, contact) plutôt que
+   d'empiler une quinzaine de sections dans une unique colonne étroite quelle
+   que soit la largeur de l'écran. En dessous de 980px la grille repasse à
+   une seule colonne, dans le même ordre (principale d'abord) : aucun
+   contenu ne disparaît, il s'empile simplement comme avant. */
+main.dashboard { max-width: var(--dashboard-max); }
+.dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: start; gap: 1.75rem; }
+.dashboard-col { min-width: 0; }
+@media (max-width: 980px) {
+  /* gap:0 plutôt qu'hérité : une fois empilées, colMain et colSide n'ont
+     plus besoin d'un espacement de grille — le margin-bottom du dernier
+     élément de colMain crée déjà l'écart avant colSide, un gap de rangée
+     s'ajouterait par-dessus en double. */
+  .dashboard-grid { grid-template-columns: 1fr; gap: 0; }
+}
 
 /* ── Boutons & liens ─────────────────────────────────────────────────── */
 .btn {
@@ -187,14 +220,14 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
 .divider { border: none; border-top: 1px solid var(--line); margin: 1.5rem 0; }
 
 .order-items {
-  padding: .6rem .9rem .7rem; margin: -.4rem 0 .5rem; background: var(--cream);
+  padding: .6rem .9rem .7rem; margin: 0 0 .5rem; background: var(--cream-deep);
   border-radius: var(--radius-sm); font-size: .84rem; color: var(--ink-soft);
 }
 .order-item-line { padding: .2rem 0; }
 
 .cancel-slot:empty { display: none; }
 .cancel-confirm {
-  padding: .8rem .95rem; margin: -.2rem 0 .5rem; background: var(--cream);
+  padding: .8rem .95rem; margin: 0 0 .5rem; background: var(--cream-deep);
   border-radius: var(--radius-sm); font-size: .84rem; color: var(--ink-soft);
 }
 .cancel-confirm p { margin: 0 0 .65rem; }
@@ -308,13 +341,22 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
 @media print {
   body { background: #fff; }
   .topbar, .app-footer, .section, .next-event, .alerts-banner, .toast-root, .skip-link { display: none !important; }
-  main { padding: 0; max-width: none; }
+  main { padding: 0; max-width: none !important; }
+  /* display:contents : les conteneurs de grille n'ont eux-mêmes aucun style
+     visuel (pas de fond/bordure), donc les "dissoudre" ici n'a aucun effet
+     de bord — la carte de membre retrouve exactement le même flux qu'avant
+     la grille à deux colonnes (colonne secondaire de toute façon vide au
+     moment de l'impression, puisque .section est masquée ci-dessus). */
+  .dashboard-grid, .dashboard-col { display: contents; }
   .member-card { box-shadow: none; border: 1.5px solid var(--ink); }
   .no-print { display: none !important; }
 }
 
 /* ── Sections ────────────────────────────────────────────────────────── */
-.section { margin-bottom: 2.1rem; }
+.section {
+  background: var(--cream); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.3rem 1.4rem 1.45rem; margin-bottom: 1.5rem; box-shadow: var(--shadow-sm);
+}
 .section-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
   margin-bottom: .85rem; padding-bottom: .5rem; border-bottom: 1px solid var(--line);
@@ -338,17 +380,37 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
 }
 .calendar-subscribe-row .btn-ghost { padding: .5rem .9rem; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
 
-.row-list { display: flex; flex-direction: column; gap: .6rem; }
+.row-list { display: flex; flex-direction: column; }
+/* Rangées séparées par un simple filet, pas des mini-cartes individuelles :
+   maintenant que .section a elle-même un fond et une bordure (cf.
+   plus haut), empiler des cartes dans une carte aurait fait beaucoup de
+   bordures redondantes — un filet entre rangées, façon relevé/tableau, est
+   plus net. `.row ~ .row` (fratrie générale) et non `.row + .row` (fratrie
+   adjacente) pour rester correct même quand un élément intercalé
+   (cancel-slot, order-items) sépare deux rangées dans le DOM. */
 .row {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-sm);
-  padding: .95rem 1.05rem; transition: box-shadow .15s, transform .15s;
+  padding: .85rem 0; transition: background .15s;
 }
-.row:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.row ~ .row { border-top: 1px solid var(--line); }
+.row:hover { background: var(--row-hover); }
 .row-main { min-width: 0; }
 .row-title { font-weight: 600; font-size: .93rem; margin-bottom: .15rem; overflow-wrap: anywhere; }
 .row-sub { font-size: .78rem; color: var(--muted); }
 .row-actions { flex: none; display: flex; align-items: center; gap: .6rem; }
+
+/* Variante tabulaire : ajoute une colonne date alignée pour les listes
+   chronologiques denses (parcours, inscriptions, commandes — cf. .row-date
+   posé côté JS). Chaque .row-table porte sa propre grille plutôt qu'une
+   grille partagée par .row-list : comme toutes les rangées utilisent la
+   même largeur de première colonne, l'alignement visuel obtenu est
+   identique à une grille commune, sans la fragilité de display:contents
+   (qui aurait supprimé le fond/survol hérités de .row) pour l'obtenir. */
+.row-table { display: grid; grid-template-columns: 7rem 1fr auto; gap: .15rem 1rem; }
+.row-table .row-date { font-size: .78rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
+@media (max-width: 560px) {
+  .row-table { grid-template-columns: 1fr; gap: .3rem; }
+}
 
 .badge {
   display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 700;
@@ -380,7 +442,7 @@ main { max-width: 760px; margin: 0 auto; padding: 1.25rem clamp(1rem, 4vw, 2.5re
 
 .upload-box {
   border: 1.5px dashed var(--line); border-radius: var(--radius-sm); padding: 1.1rem;
-  background: var(--cream); display: flex; flex-direction: column; gap: .7rem;
+  background: var(--cream-deep); display: flex; flex-direction: column; gap: .7rem;
 }
 .upload-row { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
 .file-input-label {

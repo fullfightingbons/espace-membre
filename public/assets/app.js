@@ -170,6 +170,15 @@ function formatDate(value) {
   if (Number.isNaN(d.getTime())) return String(value);
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
+// Version compacte de formatDate pour la colonne date alignée des listes
+// chronologiques (.row-table) : le format long ("12 juillet 2026") est trop
+// large pour une colonne de largeur fixe partagée par toutes les rangées.
+function formatDateShort(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 function formatMoney(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return '—';
@@ -529,12 +538,18 @@ async function renderDashboard(root) {
   if (!getToken()) return goTo('/connexion');
 
   root.appendChild(renderTopbar({ showLogout: true }));
-  const main = el('main');
+  const main = el('main', { class: 'dashboard' });
   root.appendChild(main);
 
-  main.appendChild(el('div', { class: 'member-card' }, [el('div', { class: 'skeleton' })]));
-  main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' }));
-  main.appendChild(el('div', { class: 'skeleton', style: 'height:8rem' }));
+  // Écran de chargement encore contenu à la largeur d'une colonne (proche de
+  // celle de la colonne principale une fois la grille posée) : évite un
+  // flash "pleine largeur" qui rétrécirait brusquement dès que les données
+  // arrivent et que la grille à deux colonnes apparaît.
+  main.appendChild(el('div', { style: 'max-width:720px' }, [
+    el('div', { class: 'member-card' }, [el('div', { class: 'skeleton' })]),
+    el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' }),
+    el('div', { class: 'skeleton', style: 'height:8rem' }),
+  ]));
 
   let dashboardRes;
   let profilesRes;
@@ -560,46 +575,63 @@ async function renderDashboard(root) {
   main.innerHTML = '';
   const switcher = renderProfileSwitcher(profilesRes);
   if (switcher) main.appendChild(switcher);
-  main.appendChild(renderMemberCard(me));
+
+  // Grille à deux colonnes (cf. .dashboard-grid dans style.css) : colonne
+  // principale = statut du membre et activité en cours (carte, alertes,
+  // prochain rendez-vous, certificat, parcours, inscriptions, commandes) ;
+  // colonne secondaire = actualités et informations plus stables (bulletin,
+  // grade, favoris, annuaire, compte, contact). En dessous de 980px les
+  // deux colonnes s'empilent dans cet ordre, comme avant l'ajout de la
+  // grille — aucune section ne change de contenu, seule leur disposition
+  // change.
+  const grid = el('div', { class: 'dashboard-grid' });
+  const colMain = el('div', { class: 'dashboard-col dashboard-col-main' });
+  const colSide = el('div', { class: 'dashboard-col dashboard-col-side' });
+  grid.appendChild(colMain);
+  grid.appendChild(colSide);
+  main.appendChild(grid);
+
+  colMain.appendChild(renderMemberCard(me));
 
   const alertsBanner = renderAlertsBanner(me);
-  if (alertsBanner) main.appendChild(alertsBanner);
+  if (alertsBanner) colMain.appendChild(alertsBanner);
 
   const feedbackBanner = renderFeedbackBanner(feedback);
-  if (feedbackBanner) main.appendChild(feedbackBanner);
+  if (feedbackBanner) colMain.appendChild(feedbackBanner);
 
-  // Emplacements réservés dans l'ordre d'affichage habituel, remplacés en
-  // place dès que leur requête répond — l'ordre visuel final est identique
-  // à avant, seul le moment d'apparition de chaque section change.
+  // Emplacement réservé dans l'ordre d'affichage habituel, remplacé en place
+  // dès que la requête répond — l'ordre visuel final est identique à avant,
+  // seul le moment d'apparition change.
   const nextEventSlot = el('div');
-  main.appendChild(nextEventSlot);
-  const newsSlot = el('div');
-  main.appendChild(newsSlot);
+  colMain.appendChild(nextEventSlot);
 
-  main.appendChild(renderCertificatSection(me));
-
-  const bulletinSection = renderBulletinSection(me);
-  if (bulletinSection) main.appendChild(bulletinSection);
-
-  const gradeSection = renderGradeSection(me);
-  if (gradeSection) main.appendChild(gradeSection);
+  colMain.appendChild(renderCertificatSection(me));
 
   const parcoursSection = renderParcoursSection(me, diplomeRes, cotisations);
-  if (parcoursSection) main.appendChild(parcoursSection);
+  if (parcoursSection) colMain.appendChild(parcoursSection);
 
   const registrationsSlot = el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' });
-  main.appendChild(registrationsSlot);
+  colMain.appendChild(registrationsSlot);
   const ordersSlot = el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' });
-  main.appendChild(ordersSlot);
-  const wishlistSlot = el('div', { class: 'skeleton', style: 'height:6rem;margin-bottom:1rem' });
-  main.appendChild(wishlistSlot);
+  colMain.appendChild(ordersSlot);
 
-  main.appendChild(renderAccountSection(me));
+  const newsSlot = el('div');
+  colSide.appendChild(newsSlot);
+
+  const bulletinSection = renderBulletinSection(me);
+  if (bulletinSection) colSide.appendChild(bulletinSection);
+
+  const gradeSection = renderGradeSection(me);
+  if (gradeSection) colSide.appendChild(gradeSection);
+
+  const wishlistSlot = el('div', { class: 'skeleton', style: 'height:6rem;margin-bottom:1rem' });
+  colSide.appendChild(wishlistSlot);
 
   const annuaireSection = renderAnnuaireSection(annuaireRes);
-  if (annuaireSection) main.appendChild(annuaireSection);
+  if (annuaireSection) colSide.appendChild(annuaireSection);
 
-  main.appendChild(renderContactSection());
+  colSide.appendChild(renderAccountSection(me));
+  colSide.appendChild(renderContactSection());
 
   root.appendChild(el('footer', { class: 'app-footer' }, [
     'Une question sur votre dossier ? Écrivez à ',
@@ -607,7 +639,8 @@ async function renderDashboard(root) {
   ]));
 
   // Stages/inscriptions (calendrier) : alimente à la fois le prochain
-  // rendez-vous en haut de page et la liste complète plus bas.
+  // rendez-vous en haut de la colonne principale et la liste complète plus
+  // bas.
   settled(calendrierApi('/api/member/registrations')).then((regRes) => {
     const nextEvent = renderNextEvent(regRes);
     if (nextEvent) nextEventSlot.replaceWith(nextEvent); else nextEventSlot.remove();
@@ -999,7 +1032,7 @@ function renderGradeSection(me) {
     el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon grade')]),
   ]);
   if (grade) {
-    section.appendChild(el('div', { class: 'row', style: me.notation_disponible ? 'margin-bottom:.6rem' : '' }, [
+    section.appendChild(el('div', { class: 'row' }, [
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, `Ceinture ${grade}`),
         me.numero_licence ? el('div', { class: 'row-sub' }, `Licence FFK n° ${me.numero_licence}`) : null,
@@ -1041,14 +1074,14 @@ function renderParcoursSection(me, diplomeRes, cotisations) {
   const items = [
     ...diplomes.map((d) => ({
       date: d.date_emission,
-      node: el('div', { class: 'row' }, [
+      node: el('div', { class: 'row row-table' }, [
+        el('div', { class: 'row-date' }, formatDateShort(d.date_emission)),
         el('div', { class: 'row-main' }, [
           el('div', { class: 'row-title' }, `🥋 ${d.titre || 'Diplôme'}`),
-          el('div', { class: 'row-sub' }, [
-            formatDate(d.date_emission),
-            d.saison ? ` · Saison ${d.saison}` : '',
-            d.delivre_par ? ` · Délivré par ${d.delivre_par}` : '',
-          ].join('')),
+          (d.saison || d.delivre_par) ? el('div', { class: 'row-sub' }, [
+            d.saison ? `Saison ${d.saison}` : '',
+            d.delivre_par ? `Délivré par ${d.delivre_par}` : '',
+          ].filter(Boolean).join(' · ')) : null,
         ]),
         el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => downloadDiplome(d.id, d.titre) }, 'Télécharger'),
       ]),
@@ -1057,7 +1090,8 @@ function renderParcoursSection(me, diplomeRes, cotisations) {
       const season = s.saison || seasonFromDateFr(s.date_inscription);
       return {
         date: s.date_inscription,
-        node: el('div', { class: 'row' }, [
+        node: el('div', { class: 'row row-table' }, [
+          el('div', { class: 'row-date' }, formatDateShort(s.date_inscription)),
           el('div', { class: 'row-main' }, [
             el('div', { class: 'row-title' }, `📋 Inscription — saison ${season}`),
             el('div', { class: 'row-sub' }, formatMoney(s.cotisation)),
@@ -1323,10 +1357,11 @@ function renderRegistrationsSection(regRes) {
         }, 'Annuler')
       : null;
 
-    list.appendChild(el('div', { class: 'row' }, [
+    list.appendChild(el('div', { class: 'row row-table' }, [
+      el('div', { class: 'row-date' }, formatDateShort(r.date_start)),
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, r.title || 'Événement'),
-        el('div', { class: 'row-sub' }, `${formatDate(r.date_start)}${r.lieu ? ' · ' + r.lieu : ''}`),
+        r.lieu ? el('div', { class: 'row-sub' }, r.lieu) : null,
       ]),
       el('div', { class: 'row-actions' }, [
         el('span', { class: `badge ${cls}` }, label),
@@ -1450,10 +1485,11 @@ function renderOrdersSection(orderRes) {
     const hasItems = Array.isArray(o.items) && o.items.length > 0;
     const itemsWrap = el('div', { class: 'order-items', style: 'display:none' },
       hasItems ? o.items.map((it) => el('div', { class: 'order-item-line' }, `${it.quantity} × ${it.product_name} — ${formatMoney(it.unit_price)}`)) : []);
-    list.appendChild(el('div', { class: 'row' }, [
+    list.appendChild(el('div', { class: 'row row-table' }, [
+      el('div', { class: 'row-date' }, formatDateShort(o.created_at)),
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, `Commande n°${o.id}`),
-        el('div', { class: 'row-sub' }, `${formatDate(o.created_at)} · ${formatMoney(o.total)}`),
+        el('div', { class: 'row-sub' }, formatMoney(o.total)),
       ]),
       el('div', { class: 'row-actions' }, [
         el('span', { class: `badge ${cls}` }, label),
