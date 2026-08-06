@@ -1072,20 +1072,29 @@ function renderParcoursSection(me, diplomeRes, cotisations) {
     : (hasReceipt ? [{ cotisation: me.cotisation, paiement: me.paiement, date_inscription: me.date_inscription }] : []);
 
   const items = [
-    ...diplomes.map((d) => ({
-      date: d.date_emission,
-      node: el('div', { class: 'row row-table' }, [
-        el('div', { class: 'row-date' }, formatDateShort(d.date_emission)),
-        el('div', { class: 'row-main' }, [
-          el('div', { class: 'row-title' }, `🥋 ${d.titre || 'Diplôme'}`),
-          (d.saison || d.delivre_par) ? el('div', { class: 'row-sub' }, [
-            d.saison ? `Saison ${d.saison}` : '',
-            d.delivre_par ? `Délivré par ${d.delivre_par}` : '',
-          ].filter(Boolean).join(' · ')) : null,
+    ...diplomes.map((d) => {
+      // pdf_disponible : cf. gestion /api/member/diplomes — certains diplômes
+      // (échec d'archivage, ou lot émis avant l'archivage individuel par
+      // adhérent) n'ont pas de fichier à servir. On grise le bouton plutôt
+      // que de laisser un clic aboutir systématiquement à une erreur 404.
+      const btnAttrs = { class: 'btn btn-ghost btn-sm', type: 'button' };
+      if (d.pdf_disponible) btnAttrs.onclick = () => downloadDiplome(d.id, d.titre);
+      else { btnAttrs.disabled = true; btnAttrs.title = 'Archive PDF indisponible pour ce diplôme'; } // cf. checkboxField : n'ajouter la clé que si vrai
+      return {
+        date: d.date_emission,
+        node: el('div', { class: 'row row-table' }, [
+          el('div', { class: 'row-date' }, formatDateShort(d.date_emission)),
+          el('div', { class: 'row-main' }, [
+            el('div', { class: 'row-title' }, `🥋 ${d.titre || 'Diplôme'}`),
+            (d.saison || d.delivre_par) ? el('div', { class: 'row-sub' }, [
+              d.saison ? `Saison ${d.saison}` : '',
+              d.delivre_par ? `Délivré par ${d.delivre_par}` : '',
+            ].filter(Boolean).join(' · ')) : null,
+          ]),
+          el('button', btnAttrs, d.pdf_disponible ? 'Télécharger' : 'Indisponible'),
         ]),
-        el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => downloadDiplome(d.id, d.titre) }, 'Télécharger'),
-      ]),
-    })),
+      };
+    }),
     ...seasons.map((s) => {
       const season = s.saison || seasonFromDateFr(s.date_inscription);
       return {

@@ -171,6 +171,8 @@ main.dashboard { max-width: var(--dashboard-max); }
 .btn-primary { background: var(--red); color: #fff8f0; box-shadow: var(--shadow-sm); }
 .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 14px 28px rgba(216,74,47,.25); }
 .btn-primary:disabled { opacity: .55; transform: none; box-shadow: none; cursor: not-allowed; }
+.btn-ghost:disabled { opacity: .5; cursor: not-allowed; color: var(--muted); }
+.btn-ghost:disabled:hover { border-color: var(--line); }
 .btn-ghost { background: transparent; border-color: var(--line); color: var(--ink-soft); }
 .btn-ghost:hover { border-color: var(--ink-soft); }
 .btn-block { width: 100%; }
