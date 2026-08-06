@@ -692,7 +692,16 @@ function renderFeedbackBanner(feedback) {
 // une seule règle de calcul pour ne pas les laisser diverger silencieusement,
 // comme MEMBER_ADHERENT_FIELDS avait divergé entre ses deux requêtes côté gestion.
 function isCotisationOk(paiement) {
-  return String(paiement || '').toLowerCase().includes('pay') || String(paiement || '').toLowerCase().includes('sold');
+  const p = String(paiement || '').toLowerCase();
+  // "gratuit" (cotisation offerte, ex. coach/bureau exonéré) est un statut à
+  // jour au même titre que "payé"/"soldé" — cf. statusLabels plus bas
+  // (paiement_status des inscriptions aux stages), qui traite déjà 'gratuit'
+  // comme équivalent à 'paye' (badge-ok). Sans cette entrée, un·e membre
+  // exonéré·e de cotisation se voit affiché·e comme en défaut de paiement :
+  // tampon rouge sur la carte de membre, bandeau d'alerte "cotisation pas à
+  // jour", et bouton "Renouveler mon adhésion" au lieu des boutons
+  // impression/attestation.
+  return p.includes('pay') || p.includes('sold') || p.includes('gratuit') || p.includes('exon') || p.includes('offert');
 }
 
 function certificatDaysLeft(certificatExpireLe) {
