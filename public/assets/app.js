@@ -1677,6 +1677,12 @@ function renderAccountSection(me) {
       showAlert(emailAlert, 'ok', 'Email de connexion modifié — utilisez cette nouvelle adresse pour vous reconnecter la prochaine fois.');
       emailForm.querySelector('.field-hint').textContent = `Email de connexion actuel : ${nextEmail}`;
       emailForm.reset();
+      // Best effort : reporte la wishlist et l'historique de commandes
+      // boutique sur la nouvelle adresse (cf. commentaire de la route
+      // /api/member/email-transfer côté boutique). Ne bloque jamais le
+      // message de succès ci-dessus : le changement d'email lui-même a déjà
+      // réussi, et l'adhérent n'a pas conscience de cette étape annexe.
+      boutiqueApi('/api/member/email-transfer', { method: 'POST', body: { oldEmail: me.email || '' } }).catch(() => {});
     } catch (e) {
       showAlert(emailAlert, 'error', e.message);
     } finally {
