@@ -692,16 +692,7 @@ function renderFeedbackBanner(feedback) {
 // une seule règle de calcul pour ne pas les laisser diverger silencieusement,
 // comme MEMBER_ADHERENT_FIELDS avait divergé entre ses deux requêtes côté gestion.
 function isCotisationOk(paiement) {
-  const p = String(paiement || '').toLowerCase();
-  // "gratuit" (cotisation offerte, ex. coach/bureau exonéré) est un statut à
-  // jour au même titre que "payé"/"soldé" — cf. statusLabels plus bas
-  // (paiement_status des inscriptions aux stages), qui traite déjà 'gratuit'
-  // comme équivalent à 'paye' (badge-ok). Sans cette entrée, un·e membre
-  // exonéré·e de cotisation se voit affiché·e comme en défaut de paiement :
-  // tampon rouge sur la carte de membre, bandeau d'alerte "cotisation pas à
-  // jour", et bouton "Renouveler mon adhésion" au lieu des boutons
-  // impression/attestation.
-  return p.includes('pay') || p.includes('sold') || p.includes('gratuit') || p.includes('exon') || p.includes('offert');
+  return String(paiement || '').toLowerCase().includes('pay') || String(paiement || '').toLowerCase().includes('sold');
 }
 
 function certificatDaysLeft(certificatExpireLe) {
@@ -1590,11 +1581,14 @@ function checkboxField(id, label, checked, hint) {
 }
 
 // Section "Mon compte" : l'adhérent modifie lui-même ses coordonnées et son
-// contact d'urgence (PATCH /api/member/me), et peut changer son mot de passe
+// contact d'urgence (PATCH /api/member/me), peut changer son mot de passe
 // sans repasser par le flux "mot de passe oublié" (POST
-// /api/member/password/change). Nom, prénom, email, statut, cotisation
-// restent en lecture seule ici : ce sont des informations administratives,
-// modifiables uniquement par le bureau depuis l'interface staff.
+// /api/member/password/change), et peut changer son email de connexion
+// (POST /api/member/email/change — mot de passe actuel requis ; gestion
+// répercute le changement sur l'historique diplômes/cotisations, cf. son
+// propre commentaire). Nom, prénom, statut, cotisation restent en lecture
+// seule ici : ce sont des informations administratives, modifiables
+// uniquement par le bureau depuis l'interface staff.
 function renderAccountSection(me) {
   const section = el('div', { class: 'section fade-rise' }, [
     el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon compte')]),
@@ -1660,6 +1654,33 @@ function renderAccountSection(me) {
       showAlert(pwdAlert, 'error', e.message);
     } finally {
       setBusy(btn, false, 'Changer mon mot de passe');
+    }
+  });
+
+  const emailAlert = el('div');
+  const emailForm = el('form', { id: 'account-email-form', style: 'margin-top:1.5rem' }, [
+    el('div', { class: 'field-hint', style: 'margin-bottom:.6rem' }, `Email de connexion actuel : ${me.email || '—'}`),
+    textField('next-email', 'Nouvel email de connexion', '', 'email'),
+    passwordField({ id: 'email-current-password', label: 'Mot de passe actuel', autocomplete: 'current-password' }),
+    emailAlert,
+    el('button', { class: 'btn btn-ghost btn-sm', type: 'submit' }, 'Changer mon email de connexion'),
+  ]);
+  emailForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const btn = emailForm.querySelector('button[type="submit"]');
+    const nextEmail = emailForm.querySelector('#next-email').value.trim();
+    const currentPassword = emailForm.querySelector('#email-current-password').value;
+    setBusy(btn, true, 'Changement…');
+    try {
+      const res = await gestionApi('/api/member/email/change', { method: 'POST', body: { currentPassword, nextEmail } });
+      if (isPlausibleToken(res?.data?.token)) setToken(res.data.token, res.data.expiresAt);
+      showAlert(emailAlert, 'ok', 'Email de connexion modifié — utilisez cette nouvelle adresse pour vous reconnecter la prochaine fois.');
+      emailForm.querySelector('.field-hint').textContent = `Email de connexion actuel : ${nextEmail}`;
+      emailForm.reset();
+    } catch (e) {
+      showAlert(emailAlert, 'error', e.message);
+    } finally {
+      setBusy(btn, false, 'Changer mon email de connexion');
     }
   });
 
