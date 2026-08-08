@@ -29,7 +29,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
      — plus large que le reste du site (main{max-width:760px} inchangé pour
      l'auth) : nav-wrap reprend la même valeur pour que la barre du haut
      s'aligne avec le contenu plutôt que de rester bloquée à 760px. */
-  --dashboard-max: clamp(1180px, 75vw, 1440px);
+  --dashboard-max: clamp(1180px, 75vw, 1760px);
   /* Survol des rangées de liste (.row) : un voile semi-transparent plutôt
      qu'une couleur pleine, pour rester visible quel que soit le fond sur
      lequel la rangée est posée (transparente par défaut, elle laisse voir
