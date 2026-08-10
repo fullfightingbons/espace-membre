@@ -28,8 +28,8 @@ jobs:
       - name: Generate Worker types
         run: npm run cf-typegen
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Check
+        run: npm run check
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
