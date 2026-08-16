@@ -150,6 +150,12 @@ const gestionApi = (path, opts) => apiCall(API.gestion, path, opts);
 const boutiqueApi = (path, opts) => apiCall(API.boutique, path, opts);
 const calendrierApi = (path, opts) => apiCall(API.calendrier, path, opts);
 const siteApi = (path, opts) => apiCall(SITE_URL, path, opts);
+const SERVICE_HEALTHCHECKS = [
+  { key: 'gestion', label: 'Gestion', call: () => gestionApi('/api/health', { auth: false }) },
+  { key: 'boutique', label: 'Boutique', call: () => boutiqueApi('/api/health', { auth: false }) },
+  { key: 'calendrier', label: 'Calendrier', call: () => calendrierApi('/api/health', { auth: false }) },
+  { key: 'site', label: 'Site', call: () => siteApi('/api/health', { auth: false }) },
+];
 
 // Convertit une promesse en résultat de forme Promise.allSettled ({status,
 // value} ou {status, reason}), pour réutiliser telles quelles les fonctions
@@ -632,6 +638,9 @@ async function renderDashboard(root) {
 
   colSide.appendChild(renderAccountSection(me));
   colSide.appendChild(renderContactSection());
+  const servicesSection = renderServicesStatusSection();
+  colSide.appendChild(servicesSection);
+  refreshServicesStatus(servicesSection);
 
   root.appendChild(el('footer', { class: 'app-footer' }, [
     'Une question sur votre dossier ? Écrivez à ',
@@ -652,11 +661,11 @@ async function renderDashboard(root) {
     ordersSlot.replaceWith(renderOrdersSection(orderRes));
   });
 
-  // Favoris boutique : pas de jeton de session côté boutique (l'ajout se
-  // fait depuis la boutique publique, sans connexion) — simple lecture par
-  // email, déjà connu ici puisque le membre est authentifié.
-  settled(boutiqueApi('/api/wishlist?email=' + encodeURIComponent(me.email || ''), { auth: false })).then((wishRes) => {
-    const wishSection = renderWishlistSection(wishRes, me.email);
+  // Favoris boutique : l'espace membre envoie le jeton membre signé à la
+  // boutique, qui retombe encore sur l'email explicite pour les usages
+  // publics hors espace membre.
+  settled(boutiqueApi('/api/wishlist')).then((wishRes) => {
+    const wishSection = renderWishlistSection(wishRes);
     if (wishSection) wishlistSlot.replaceWith(wishSection); else wishlistSlot.remove();
   });
 
@@ -1415,7 +1424,7 @@ async function confirmCancelRegistration(btn, slot, r) {
   }
 }
 
-function renderWishlistSection(wishRes, memberEmail) {
+function renderWishlistSection(wishRes) {
   if (wishRes.status === 'rejected') {
     return el('div', { class: 'section fade-rise fade-rise-3' }, [
       el('div', { class: 'section-title' }, 'Mes favoris boutique'),
@@ -1447,7 +1456,7 @@ function renderWishlistSection(wishRes, memberEmail) {
           onclick: async () => {
             row.style.opacity = '.4';
             try {
-              await boutiqueApi('/api/wishlist/' + it.product_id + '?email=' + encodeURIComponent(memberEmail || ''), { method: 'DELETE', auth: false });
+              await boutiqueApi('/api/wishlist/' + it.product_id, { method: 'DELETE' });
               row.remove();
               if (!list.children.length) section.remove();
             } catch { row.style.opacity = '1'; showToast('Erreur, réessayez'); }
@@ -1857,6 +1866,45 @@ function renderContactSection() {
     el('div', { class: 'section-note' }, "Votre message part par email sans révéler d'adresse en clair ; le bureau pourra vous répondre directement."),
     form,
   ]);
+}
+
+function renderServicesStatusSection() {
+  const list = el('div', { class: 'row-list compact-service-list' });
+  for (const service of SERVICE_HEALTHCHECKS) {
+    list.appendChild(el('div', { class: 'row', 'data-service': service.key }, [
+      el('div', { class: 'row-main' }, [
+        el('div', { class: 'row-title' }, service.label),
+        el('div', { class: 'row-sub' }, 'Vérification en cours…'),
+      ]),
+      el('span', { class: 'badge badge-muted' }, '…'),
+    ]));
+  }
+  return el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Services connectés')]),
+    list,
+  ]);
+}
+
+async function refreshServicesStatus(section) {
+  const checks = SERVICE_HEALTHCHECKS.map(async (service) => {
+    const row = section.querySelector(`[data-service="${service.key}"]`);
+    if (!row) return;
+    const sub = row.querySelector('.row-sub');
+    const badge = row.querySelector('.badge');
+    const started = performance.now();
+    try {
+      await service.call();
+      const ms = Math.round(performance.now() - started);
+      sub.textContent = `Disponible · ${ms} ms`;
+      badge.className = 'badge badge-ok';
+      badge.textContent = 'OK';
+    } catch (e) {
+      sub.textContent = e?.message || 'Indisponible';
+      badge.className = 'badge badge-warn';
+      badge.textContent = 'À surveiller';
+    }
+  });
+  await Promise.allSettled(checks);
 }
 
 // ── Routeur ─────────────────────────────────────────────────────────────

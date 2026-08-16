@@ -4,9 +4,10 @@ export interface Env {
 
 // Mêmes en-têtes de sécurité que les autres Workers du projet (site, gestion,
 // calendrier, boutique) — cf. leurs commentaires respectifs sur pourquoi
-// chacun de ces en-têtes existe. connect-src liste les trois APIs que ce
+// chacun de ces en-têtes existe. connect-src liste les APIs que ce
 // front appelle en cross-origin (gestion pour l'identité/les documents,
-// boutique pour les commandes, calendrier pour les inscriptions) ; sans ces
+// boutique pour les commandes, calendrier pour les inscriptions, site pour
+// les actualités et son état de santé) ; sans ces
 // domaines ici, le navigateur bloquerait silencieusement tous les appels
 // fetch() de app.js.
 const SECURITY_HEADERS: Record<string, string> = {
