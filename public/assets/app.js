@@ -1017,6 +1017,18 @@ function seasonFromDateFr(dateStr) {
   return `${start}-${start + 1}`;
 }
 
+// Bornes calendaires (YYYY-MM-DD) de la même saison sportive que
+// seasonFromDateFr ci-dessus — utilisées pour demander à gestion une
+// attestation de présence scopée à la saison en cours plutôt qu'à tout
+// l'historique du membre (cf. printAttestationPresence).
+function seasonRangeFr(dateStr) {
+  const d = dateStr ? new Date(dateStr) : new Date();
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const start = m >= 7 ? y : y - 1;
+  return { debut: `${start}-07-01`, fin: `${start + 1}-06-30` };
+}
+
 // Les informations du club (nom, adresse, SIRET, logo) affichées en en-tête
 // du reçu ne sont chargées qu'à cet instant, au clic sur « Imprimer » — pas
 // au chargement du dashboard — car la plupart des membres n'impriment
@@ -1136,6 +1148,52 @@ function renderParcoursSection(me, diplomeRes, cotisations) {
   ]);
 }
 
+// Numéro de semaine « calendaire » (lundi comme premier jour du décompte),
+// utilisé uniquement pour repérer des semaines consécutives dans
+// computeAttendanceStreak ci-dessous — pas un vrai numéro ISO-8601 (pas
+// besoin d'un affichage), juste un entier qui augmente de 1 à chaque
+// nouvelle semaine, calculé en UTC pour rester insensible au fuseau
+// horaire/changement d'heure.
+function mondayWeekIndex(dateStr) {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return null;
+  const utcMidnight = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const dayOfWeek = new Date(utcMidnight).getUTCDay(); // 0=dim..6=sam
+  const daysSinceMonday = (dayOfWeek + 6) % 7; // 0=lun..6=dim
+  const mondayUtc = utcMidnight - daysSinceMonday * 86400000;
+  return Math.floor(mondayUtc / (7 * 86400000));
+}
+
+// Nombre de semaines consécutives comportant au moins une présence,
+// décompté depuis la semaine la plus récente où l'adhérent a été pointé
+// présent — pas forcément la semaine calendaire en cours, pour ne pas
+// casser la série juste parce que la séance de cette semaine n'a pas
+// encore eu lieu. Renvoie 0 si aucune présence, ou si la dernière semaine
+// pointée remonte à plus d'une semaine (série jugée rompue plutôt
+// qu'affichée comme « en cours » alors qu'elle ne l'est plus). Calculé
+// 100% côté front à partir de `presences` (déjà chargé pour le reste de la
+// section) : aucun appel réseau supplémentaire.
+function computeAttendanceStreak(presences) {
+  const attendedWeeks = new Set();
+  for (const p of presences) {
+    if (Number(p.present) !== 1) continue;
+    const idx = mondayWeekIndex(p.date_seance);
+    if (idx !== null) attendedWeeks.add(idx);
+  }
+  if (!attendedWeeks.size) return 0;
+
+  const mostRecent = Math.max(...attendedWeeks);
+  if (mondayWeekIndex(new Date()) - mostRecent > 1) return 0;
+
+  let streak = 1;
+  let cursor = mostRecent;
+  while (attendedWeeks.has(cursor - 1)) {
+    streak++;
+    cursor--;
+  }
+  return streak;
+}
+
 // Section "Mes présences" : pointages de séance remontés par le bureau
 // depuis gestion (table `presences`, cf. migrations 0025/0032) — donne à
 // l'adhérent un vrai suivi de son assiduité (et pas seulement au bureau,
@@ -1161,6 +1219,10 @@ function renderPresencesSection(presences) {
   const currentSeasonCount = presences.filter(
     (p) => Number(p.present) === 1 && seasonFromDateFr(p.date_seance) === currentSeason
   ).length;
+  // Série de régularité (ex. "4 semaines de suite") : n'affiche le badge
+  // qu'à partir de 2 semaines, une "série d'une semaine" n'apportant pas
+  // d'information par rapport au compteur de saison ci-dessus.
+  const streak = computeAttendanceStreak(presences);
 
   // Liste complète mais tronquée à l'affichage : un historique de plusieurs
   // saisons peut vite compter des centaines de pointages, illisible en une
@@ -1174,13 +1236,20 @@ function renderPresencesSection(presences) {
   const section = el('div', { class: 'section fade-rise' }, [
     el('div', { class: 'section-head' }, [
       el('div', { class: 'section-title' }, 'Mes présences'),
-      el('div', { class: 'section-note' }, `${presentCount} séance${presentCount > 1 ? 's' : ''} au total`),
+      el('div', { class: 'section-head-actions' }, [
+        el('div', { class: 'section-note' }, `${presentCount} séance${presentCount > 1 ? 's' : ''} au total`),
+        el('button', {
+          class: 'link-quiet', type: 'button',
+          onclick: (event) => printAttestationPresence(event.currentTarget),
+        }, '🖨️ Exporter / imprimer'),
+      ]),
     ]),
     el('div', { class: 'row' }, [
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, `Saison ${currentSeason}`),
         el('div', { class: 'row-sub' }, `${currentSeasonCount} séance${currentSeasonCount > 1 ? 's' : ''} suivie${currentSeasonCount > 1 ? 's' : ''}`),
       ]),
+      streak >= 2 ? el('span', { class: 'badge badge-ok' }, `🔥 ${streak} semaines de suite`) : null,
     ]),
     el('div', { class: 'row-list' }, recent.map((p) => {
       const present = Number(p.present) === 1;
@@ -1231,6 +1300,27 @@ async function printNotation() {
 
 async function printAttestationCotisation() {
   await openPdfForPrint('/api/member/documents/attestation-cotisation', 'Attestation indisponible.');
+}
+
+// Attestation de présence pour la saison en cours (bornes calculées côté
+// front via seasonRangeFr, cf. son commentaire) — utile à un adhérent pour
+// justifier son assiduité auprès d'un employeur ou d'une bourse. Utilise
+// setBusy comme printCotisationReceipt ci-dessus (et non openPdfForPrint
+// seul) : contrairement aux autres boutons "Imprimer" de cette page, celui-
+// ci vit dans le bandeau d'actions de la section (pas une simple rangée),
+// donc son propre libellé sert de retour visuel pendant la génération.
+async function printAttestationPresence(btn) {
+  const originalLabel = btn.textContent;
+  setBusy(btn, true, 'Préparation…');
+  try {
+    const { debut, fin } = seasonRangeFr();
+    await openPdfForPrint(
+      `/api/member/documents/attestation-presence?debut=${debut}&fin=${fin}`,
+      "Attestation de présence indisponible pour le moment."
+    );
+  } finally {
+    setBusy(btn, false, originalLabel);
+  }
 }
 
 async function downloadDiplome(id, titre) {
