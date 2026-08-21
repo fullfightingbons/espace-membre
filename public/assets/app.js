@@ -577,6 +577,7 @@ async function renderDashboard(root) {
   const annuaireRes = { status: 'fulfilled', value: { data: dashboardRes.data.annuaire } };
   const cotisations = dashboardRes.data.cotisations || [];
   const feedback = dashboardRes.data.feedback || null;
+  const presences = dashboardRes.data.presences || [];
 
   main.innerHTML = '';
   const switcher = renderProfileSwitcher(profilesRes);
@@ -615,6 +616,9 @@ async function renderDashboard(root) {
 
   const parcoursSection = renderParcoursSection(me, diplomeRes, cotisations);
   if (parcoursSection) colMain.appendChild(parcoursSection);
+
+  const presencesSection = renderPresencesSection(presences);
+  if (presencesSection) colMain.appendChild(presencesSection);
 
   const registrationsSlot = el('div', { class: 'skeleton', style: 'height:8rem;margin-bottom:1rem' });
   colMain.appendChild(registrationsSlot);
@@ -1130,6 +1134,70 @@ function renderParcoursSection(me, diplomeRes, cotisations) {
     el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Mon parcours')]),
     el('div', { class: 'row-list' }, items.map((it) => it.node)),
   ]);
+}
+
+// Section "Mes présences" : pointages de séance remontés par le bureau
+// depuis gestion (table `presences`, cf. migrations 0025/0032) — donne à
+// l'adhérent un vrai suivi de son assiduité (et pas seulement au bureau,
+// qui pointait jusqu'ici sans que ça se répercute nulle part côté membre).
+// N'affiche rien si aucune séance n'a jamais été pointée pour cet
+// adhérent (club qui ne fait pas encore ce suivi, ou adhérent trop récent)
+// — pas un registre vide à faire défiler.
+// `present` distingue présence effective (1) d'une absence explicitement
+// pointée comme justifiée (0, cf. migration 0025) ; les séances jamais
+// pointées n'apparaissent simplement pas ici, ce n'est pas un calendrier
+// de toutes les séances du club.
+function renderPresencesSection(presences) {
+  if (!Array.isArray(presences) || !presences.length) return null;
+
+  const presentCount = presences.filter((p) => Number(p.present) === 1).length;
+  // Regroupement par saison sportive (convention du club, démarre au 1er
+  // juillet) via seasonFromDateFr — même helper déjà utilisé pour les
+  // lignes de cotisation sans libellé de saison explicite ci-dessus :
+  // `presences` n'a pas de colonne saison/exercice_id (juste une date de
+  // séance), donc la dériver de la date est la même approche que pour
+  // l'historique de cotisation.
+  const currentSeason = seasonFromDateFr();
+  const currentSeasonCount = presences.filter(
+    (p) => Number(p.present) === 1 && seasonFromDateFr(p.date_seance) === currentSeason
+  ).length;
+
+  // Liste complète mais tronquée à l'affichage : un historique de plusieurs
+  // saisons peut vite compter des centaines de pointages, illisible en une
+  // seule liste — on montre les plus récents et on indique le reste par un
+  // simple compteur plutôt que d'ajouter une pagination pour une section
+  // secondaire du tableau de bord.
+  const RECENT_LIMIT = 12;
+  const recent = presences.slice(0, RECENT_LIMIT);
+  const hiddenCount = presences.length - recent.length;
+
+  const section = el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'section-head' }, [
+      el('div', { class: 'section-title' }, 'Mes présences'),
+      el('div', { class: 'section-note' }, `${presentCount} séance${presentCount > 1 ? 's' : ''} au total`),
+    ]),
+    el('div', { class: 'row' }, [
+      el('div', { class: 'row-main' }, [
+        el('div', { class: 'row-title' }, `Saison ${currentSeason}`),
+        el('div', { class: 'row-sub' }, `${currentSeasonCount} séance${currentSeasonCount > 1 ? 's' : ''} suivie${currentSeasonCount > 1 ? 's' : ''}`),
+      ]),
+    ]),
+    el('div', { class: 'row-list' }, recent.map((p) => {
+      const present = Number(p.present) === 1;
+      return el('div', { class: 'row row-table' }, [
+        el('div', { class: 'row-date' }, formatDateShort(p.date_seance)),
+        el('div', { class: 'row-main' }, [
+          el('div', { class: 'row-title' }, p.creneau || 'Séance'),
+          p.notes ? el('div', { class: 'row-sub' }, p.notes) : null,
+        ]),
+        el('span', { class: `badge ${present ? 'badge-ok' : 'badge-warn'}` }, present ? 'Présent·e' : 'Absence justifiée'),
+      ]);
+    })),
+    hiddenCount > 0
+      ? el('div', { class: 'row-sub', style: 'padding-top:.6rem' }, `+ ${hiddenCount} séance${hiddenCount > 1 ? 's' : ''} plus ancienne${hiddenCount > 1 ? 's' : ''}`)
+      : null,
+  ]);
+  return section;
 }
 
 // Ouvre un PDF authentifié dans un nouvel onglet plutôt que de forcer un
