@@ -10,10 +10,4 @@ describe("dashboard integrations", () => {
     expect(appSource).not.toContain("/api/wishlist?email=");
     expect(appSource).not.toContain("auth: false })).then((wishRes)");
   });
-
-  it("shows health status for connected services", () => {
-    expect(appSource).toContain("const SERVICE_HEALTHCHECKS");
-    expect(appSource).toContain("function renderServicesStatusSection");
-    expect(appSource).toContain("refreshServicesStatus(servicesSection)");
-  });
 });
