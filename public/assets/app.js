@@ -628,6 +628,8 @@ async function renderDashboard(root) {
   const gradeSection = renderGradeSection(me);
   if (gradeSection) colSide.appendChild(gradeSection);
 
+  colSide.appendChild(renderRessourcesSection());
+
   const wishlistSlot = el('div', { class: 'skeleton', style: 'height:6rem;margin-bottom:1rem' });
   colSide.appendChild(wishlistSlot);
 
@@ -917,6 +919,51 @@ function renderNewsSection(newsRes) {
   }
   section.appendChild(list);
   return section;
+}
+
+// Ressources du club : documents pédagogiques servis tels quels avec l'app
+// (fichiers statiques de public/assets/docs/) — donc sans appel API ni jeton,
+// disponibles pour tout adhérent connecté. L'aperçu WebP sert à la lecture
+// rapide (pinch-zoom sur mobile) ; le PDF 3 m × 1 m sert à l'impression et au
+// zoom vectoriel.
+const BANDEROLE_TECHNIQUES = {
+  pdf: '/assets/docs/banderole-techniques-full-contact.pdf',
+  image: '/assets/docs/banderole-techniques-full-contact.webp',
+  imageWidth: 2400,
+  imageHeight: 802,
+};
+
+function renderRessourcesSection() {
+  const b = BANDEROLE_TECHNIQUES;
+  return el('div', { class: 'section fade-rise' }, [
+    el('div', { class: 'section-head' }, [el('div', { class: 'section-title' }, 'Ressources du club')]),
+    el('a', {
+      class: 'resource-preview',
+      href: b.image,
+      target: '_blank',
+      rel: 'noopener',
+      'aria-label': 'Agrandir la banderole des techniques de Full Contact',
+    }, [
+      el('img', {
+        src: b.image,
+        width: String(b.imageWidth),
+        height: String(b.imageHeight),
+        loading: 'lazy',
+        decoding: 'async',
+        alt: "Banderole des techniques de Full Contact : coups de pied, balayages et coups de poing, zones autorisées et interdites, rappel d'arbitrage",
+      }),
+    ]),
+    el('div', { class: 'row' }, [
+      el('div', { class: 'row-main' }, [
+        el('div', { class: 'row-title' }, 'Banderole des techniques Full Contact'),
+        el('div', { class: 'row-sub' }, "Techniques, zones autorisées et rappel d'arbitrage · PDF 3 m × 1 m"),
+      ]),
+      el('div', { class: 'row-actions' }, [
+        el('a', { class: 'btn btn-ghost btn-sm', href: b.image, target: '_blank', rel: 'noopener' }, 'Voir en grand'),
+        el('a', { class: 'btn btn-ghost btn-sm', href: b.pdf, download: 'banderole-techniques-full-contact-AFFBC.pdf' }, 'Télécharger le PDF'),
+      ]),
+    ]),
+  ]);
 }
 
 // Annuaire des membres : liste (nom + prénom uniquement) des adhérents

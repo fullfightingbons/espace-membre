@@ -482,3 +482,11 @@ footer.app-footer a { text-decoration: underline; text-underline-offset: 2px; }
   .file-input-label { padding: .75rem 1rem; min-height: 44px; }
   .btn-logout { padding: .65rem 1rem; min-height: 40px; }
 }
+
+/* ── Ressources du club (aperçu de la banderole) ─────────────────────── */
+.resource-preview {
+  display: block; margin-bottom: .85rem; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: #0b1220;
+}
+.resource-preview img { display: block; width: 100%; height: auto; }
+.resource-preview:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
