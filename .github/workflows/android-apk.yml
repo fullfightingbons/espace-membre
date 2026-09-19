@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -128,3 +128,12 @@ jobs:
           path: dist-android/*
           retention-days: 90
           if-no-files-found: error
+
+      - name: Publier une Release GitHub
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-android/*
+          name: "Espace membre Android v${{ env.ANDROID_VERSION_NAME }}"
+          prerelease: ${{ steps.signing.outputs.release != 'true' }}
+          generate_release_notes: true
