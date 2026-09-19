@@ -26,7 +26,7 @@ if [ -f "$KS" ]; then
   exit 1
 fi
 
-mkdir -p "$KS_DIR"
+mkdir -p "$KS_DIR" "$(dirname "$ASSETLINKS")"
 OK=0
 trap 'if [ "$OK" != 1 ]; then rm -f "$KS" "$KS_DIR/SECRETS.txt"; fi' EXIT
 PASS="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | cut -c1-28)"
