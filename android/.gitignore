@@ -1,0 +1,13 @@
+# Sorties de build et caches Gradle
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+captures/
+
+# Clés de signature : ne JAMAIS les committer
+keystore/
+*.keystore
+*.jks
