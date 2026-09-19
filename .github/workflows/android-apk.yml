@@ -130,9 +130,9 @@ jobs:
           if-no-files-found: error
 
       - name: Publier une Release GitHub
-        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: "android-v${{ env.ANDROID_VERSION_NAME }}"
           files: dist-android/*
           name: "Espace membre Android v${{ env.ANDROID_VERSION_NAME }}"
           prerelease: ${{ steps.signing.outputs.release != 'true' }}
