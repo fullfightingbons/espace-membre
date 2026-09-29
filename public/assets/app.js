@@ -31,12 +31,28 @@ const RENEWAL_URL = 'https://inscription.americanfullfightingbons.fr/';
 // serveur avant d'accorder quoi que ce soit (tarif bureau, etc.) — un lien
 // modifié ne ferait donc que préremplir des champs que le membre pourrait
 // de toute façon saisir lui-même à la main.
+// `adherents.adresse` concatène adresse + complément (« 12 rue X, Néant ») :
+// jusqu'ici le formulaire d'inscription exigeait de saisir « Néant » quand il
+// n'y avait pas de complément, et ce mot s'est retrouvé stocké dans l'adresse.
+// On l'ôte avant de préremplir, pour ne pas le réinjecter à chaque
+// renouvellement. Ne retire que ce mot exact en fin de chaîne (variantes
+// d'accent/casse comprises), jamais une vraie fin d'adresse.
+function cleanAddressForPrefill(adresse) {
+  const s = String(adresse || '').trim();
+  if (!s) return undefined;
+  const cleaned = s.replace(/(^|[\s,;-]+)n[ée]ant\s*$/i, '').trim();
+  return cleaned || undefined;
+}
+
 function buildRenewalUrl(me) {
   const prefill = {
     lastName: me.nom || undefined,
     firstName: me.prenom || undefined,
+    // 'F' | 'M' | null — renvoyé par /api/member/me ; absent pour les fiches
+    // antérieures à l'ajout du champ (le membre le choisira alors une fois).
+    sexe: me.sexe === 'F' || me.sexe === 'M' ? me.sexe : undefined,
     birthDate: me.naissance || undefined,
-    address1: me.adresse || undefined,
+    address1: cleanAddressForPrefill(me.adresse),
     postalCode: me.code_postal || undefined,
     city: me.ville || undefined,
     phonePrimary: me.telephone || undefined,
@@ -698,7 +714,30 @@ function renderFeedbackBanner(feedback) {
 // une seule règle de calcul pour ne pas les laisser diverger silencieusement,
 // comme MEMBER_ADHERENT_FIELDS avait divergé entre ses deux requêtes côté gestion.
 function isCotisationOk(paiement) {
-  return String(paiement || '').toLowerCase().includes('pay') || String(paiement || '').toLowerCase().includes('sold');
+  const p = String(paiement || '').toLowerCase();
+  // « Gratuit » = cotisation offerte (membres du Bureau) : elle est à jour, ce
+  // n'est pas un impayé. Sans ce cas, ces membres voyaient un faux
+  // « Cotisation : Gratuit » avec un bouton Renouveler.
+  return p.includes('pay') || p.includes('sold') || p.includes('gratuit');
+}
+
+// Vrai si la date de fin d'adhésion (YYYY-MM-DD) est dépassée. La fiche reste
+// "Payé" après l'échéance (le champ paiement décrit le règlement de la saison
+// passée, pas la validité de l'adhésion) : se fier au seul champ paiement
+// affichait « Cotisation à jour » à un adhérent dont l'adhésion avait expiré.
+// Même règle que le rappel automatique côté gestion (échue dès le lendemain de
+// la date de fin). Date absente ou illisible : on ne conclut pas à l'expiration.
+function isAdhesionExpired(me, now = new Date()) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(me?.date_fin_adhesion || ''));
+  if (!m) return false;
+  const endOfDay = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999);
+  if (Number.isNaN(endOfDay.getTime())) return false;
+  return now.getTime() > endOfDay.getTime();
+}
+
+// L'adhérent doit-il renouveler ? Adhésion échue OU cotisation non réglée.
+function needsRenewal(me, now = new Date()) {
+  return isAdhesionExpired(me, now) || !isCotisationOk(me?.paiement);
 }
 
 function certificatDaysLeft(certificatExpireLe) {
@@ -726,10 +765,12 @@ function certificatWarningLevel(certificatExpireLe) {
 function renderAlertsBanner(me) {
   const items = [];
 
-  if (!isCotisationOk(me.paiement)) {
+  if (needsRenewal(me)) {
     items.push({
       level: 'warn',
-      text: "Votre cotisation n'est pas à jour.",
+      text: isAdhesionExpired(me)
+        ? `Votre adhésion est arrivée à échéance le ${formatDate(me.date_fin_adhesion)}.`
+        : "Votre cotisation n'est pas à jour.",
       action: { label: 'Renouveler →', href: buildRenewalUrl(me), external: true },
     });
   }
@@ -782,7 +823,29 @@ function familyRoleIcon(familyRole) {
 }
 
 function renderMemberCard(me) {
-  const cotisationOk = isCotisationOk(me.paiement);
+  const expired = isAdhesionExpired(me);
+  const renewalNeeded = needsRenewal(me);
+  // Règlement de la dernière cotisation enregistré : donne droit à
+  // l'impression / l'attestation, y compris pour un adhérent dont l'adhésion
+  // vient d'échoir (il peut en avoir besoin pour la saison écoulée).
+  const hasPaidCotisation = isCotisationOk(me.paiement);
+  const stampText = !renewalNeeded
+    ? 'Cotisation à jour'
+    : expired
+      ? `Adhésion échue le ${formatDate(me.date_fin_adhesion)}`
+      : `Cotisation : ${me.paiement || 'à régulariser'}`;
+  const actions = [];
+  if (hasPaidCotisation) {
+    actions.push(el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => window.print() }, '🖶 Imprimer / PDF'));
+    actions.push(el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: printAttestationCotisation }, '📄 Attestation'));
+  }
+  // Toujours vers le site d'inscription (jamais un lien HelloAsso
+  // direct) : c'est ce formulaire qui permet de mettre à jour les
+  // coordonnées et, le cas échéant, de repasser commande de vêtements —
+  // un lien de paiement direct court-circuiterait cette étape.
+  if (renewalNeeded) {
+    actions.push(el('a', { class: 'btn btn-primary btn-sm no-print', href: buildRenewalUrl(me), target: '_blank', rel: 'noopener' }, 'Renouveler mon adhésion →'));
+  }
   return el('div', { class: 'member-card fade-rise' }, [
     el('div', { class: 'member-card-top' }, [
       el('div', {}, [
@@ -795,20 +858,11 @@ function renderMemberCard(me) {
       el('div', { class: 'seal' }, [el('img', { src: '/assets/logo.png', alt: '' })]),
     ]),
     el('div', { class: 'member-card-bottom' }, [
-      el('div', { class: `stamp ${cotisationOk ? 'stamp-ok' : 'stamp-warn'}` }, [
+      el('div', { class: `stamp ${renewalNeeded ? 'stamp-warn' : 'stamp-ok'}` }, [
         el('span', { class: 'stamp-dot' }),
-        cotisationOk ? 'Cotisation à jour' : `Cotisation : ${me.paiement || 'à régulariser'}`,
+        stampText,
       ]),
-      // Toujours vers le site d'inscription (jamais un lien HelloAsso
-      // direct) : c'est ce formulaire qui permet de mettre à jour les
-      // coordonnées et, le cas échéant, de repasser commande de vêtements —
-      // un lien de paiement direct court-circuiterait cette étape.
-      cotisationOk
-        ? el('div', { class: 'no-print', style: 'display:flex;gap:.5rem' }, [
-            el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => window.print() }, '🖶 Imprimer / PDF'),
-            el('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: printAttestationCotisation }, '📄 Attestation'),
-          ])
-        : el('a', { class: 'btn btn-primary btn-sm no-print', href: buildRenewalUrl(me), target: '_blank', rel: 'noopener' }, 'Renouveler mon adhésion →'),
+      el('div', { class: 'no-print', style: 'display:flex;gap:.5rem;flex-wrap:wrap' }, actions),
     ]),
   ]);
 }
@@ -839,7 +893,7 @@ function renderProfileSwitcher(profilesRes) {
     // Vue famille : badges cotisation/certificat, pour voir d'un coup d'œil
     // qui a besoin de quoi sans avoir à basculer sur chaque profil.
     const badges = [];
-    if (!isCotisationOk(p.paiement)) {
+    if (needsRenewal(p)) {
       badges.push(el('span', { class: 'profile-pill-badge', title: 'Cotisation à renouveler', 'aria-label': 'Cotisation à renouveler' }, '⚠️'));
     }
     const certWarn = certificatWarningLevel(p.certificat_expire_le);
