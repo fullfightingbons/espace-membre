@@ -1040,10 +1040,10 @@ function renderRessourcesSection() {
         alt: "Banderole des techniques de Full Contact : coups de pied, balayages et coups de poing, zones autorisées et interdites, rappel d'arbitrage",
       }),
     ]),
-    el('div', { class: 'row' }, [
+    el('div', { class: 'row resource-row' }, [
       el('div', { class: 'row-main' }, [
         el('div', { class: 'row-title' }, 'Banderole des techniques Full Contact'),
-        el('div', { class: 'row-sub' }, "Techniques, zones autorisées et rappel d'arbitrage · PDF 3 m × 1 m"),
+        el('div', { class: 'row-sub' }, "Techniques, zones autorisées et rappel d'arbitrage · PDF 3\u00a0m\u00a0×\u00a01\u00a0m"),
       ]),
       el('div', { class: 'row-actions' }, [
         el('a', { class: 'btn btn-ghost btn-sm', href: b.image, target: '_blank', rel: 'noopener' }, 'Voir en grand'),

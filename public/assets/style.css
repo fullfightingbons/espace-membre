@@ -490,3 +490,15 @@ footer.app-footer a { text-decoration: underline; text-underline-offset: 2px; }
 }
 .resource-preview img { display: block; width: 100%; height: auto; }
 .resource-preview:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+
+/* La colonne latérale est étroite : sur un .row classique (texte à gauche,
+   boutons à droite), les boutons gardaient leur largeur et le titre, écrasé,
+   se coupait lettre par lettre. Ici : titre et description au-dessus, boutons
+   dessous à pleine largeur, qui se répartissent la place et passent à la
+   ligne si l'écran est vraiment étroit. */
+.resource-row { flex-direction: column; align-items: stretch; gap: .8rem; padding: .2rem 0 0; }
+.resource-row:hover { background: transparent; }
+.resource-row .row-title { overflow-wrap: normal; text-wrap: balance; }
+.resource-row .row-sub { line-height: 1.45; }
+.resource-row .row-actions { width: 100%; }
+.resource-row .row-actions .btn { flex: 1 1 9rem; }
