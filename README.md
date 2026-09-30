@@ -47,6 +47,22 @@ donnée venant des API n'est jamais insérée en HTML brut côté client
 (`app.js` construit le DOM élément par élément, jamais via `innerHTML` avec
 des données externes).
 
+## Lien vers la boutique (tenue offerte aux Membres du Bureau)
+
+La boutique est publique : pour savoir qui arrive depuis l'espace membre, les
+liens « Boutique » (navigation croisée) et « Voir la boutique → » (favoris,
+commandes) lui transmettent le jeton membre dans le **fragment** de l'URL
+(`https://boutique…/#membre=<jeton>`), construit **au clic** par
+`bindBoutiqueLink` dans `app.js`. Le fragment n'est jamais envoyé au serveur
+ni dans le `Referer`, et la boutique l'efface de la barre d'adresse à
+l'arrivée. Le jeton n'est jamais posé dans un `href` (un « copier le lien »
+n'en fait donc pas fuiter) ; sans jeton (non connecté, clic droit), la
+boutique s'ouvre normalement, au tarif public.
+
+Ce lien ne donne aucun droit par lui-même : la boutique revérifie le jeton
+(`SESSION_SECRET` partagé) puis interroge `gestion` pour confirmer que la
+fiche a bien la discipline « membre du bureau ».
+
 ## Configuration nécessaire avant déploiement
 
 1. **`SESSION_SECRET`** doit être défini sur `gestion`, `boutique` et

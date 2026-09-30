@@ -167,6 +167,38 @@ const boutiqueApi = (path, opts) => apiCall(API.boutique, path, opts);
 const calendrierApi = (path, opts) => apiCall(API.calendrier, path, opts);
 const siteApi = (path, opts) => apiCall(SITE_URL, path, opts);
 
+// ── Lien vers la boutique avec identification du membre ──────────────────
+// La boutique est publique (pas de connexion) : pour offrir la tenue aux
+// Membres du Bureau, elle doit savoir qui arrive depuis l'espace membre.
+// On lui transmet donc le jeton membre dans le FRAGMENT de l'URL
+// (#membre=...) : un fragment n'est jamais envoyé au serveur ni dans le
+// Referer, et la boutique l'efface de la barre d'adresse dès l'arrivée.
+// L'adresse est construite AU CLIC, jamais posée dans le href : un « copier
+// le lien » ou un clic droit ne doit pas pouvoir faire fuiter le jeton — dans
+// ces cas la boutique s'ouvre normalement, au tarif public. La boutique
+// revérifie de toute façon le jeton (SESSION_SECRET partagé) puis demande à
+// gestion si la fiche est bien « membre du bureau » : un lien forgé n'ouvre
+// aucun droit.
+function buildBoutiqueUrl() {
+  const token = getToken();
+  return token ? `${API.boutique}/#membre=${encodeURIComponent(token)}` : API.boutique;
+}
+function bindBoutiqueLink(anchor) {
+  anchor.addEventListener('click', (event) => {
+    event.preventDefault();
+    const newTab = anchor.target === '_blank' || event.ctrlKey || event.metaKey || event.shiftKey;
+    if (newTab) window.open(buildBoutiqueUrl(), '_blank', 'noopener');
+    else window.location.href = buildBoutiqueUrl();
+  });
+  // Clic molette : ouvre aussi dans un nouvel onglet, avec le jeton.
+  anchor.addEventListener('auxclick', (event) => {
+    if (event.button !== 1) return;
+    event.preventDefault();
+    window.open(buildBoutiqueUrl(), '_blank', 'noopener');
+  });
+  return anchor;
+}
+
 // Convertit une promesse en résultat de forme Promise.allSettled ({status,
 // value} ou {status, reason}), pour réutiliser telles quelles les fonctions
 // de rendu déjà écrites contre cette forme (renderNextEvent,
@@ -240,9 +272,10 @@ function renderCrossNav() {
     ['Espace membre', 'https://espace-membre.americanfullfightingbons.fr/'],
   ];
   return el('nav', { class: 'crossnav', 'aria-label': 'Navigation entre les services AFFBC' },
-    links.map(([label, href]) =>
-      el('a', { href, ...(label === 'Espace membre' ? { 'aria-current': 'page' } : {}) }, label)
-    )
+    links.map(([label, href]) => {
+      const link = el('a', { href, ...(label === 'Espace membre' ? { 'aria-current': 'page' } : {}) }, label);
+      return label === 'Boutique' ? bindBoutiqueLink(link) : link;
+    })
   );
 }
 
@@ -1687,7 +1720,7 @@ function renderWishlistSection(wishRes) {
   const section = el('div', { class: 'section fade-rise fade-rise-3' }, [
     el('div', { class: 'section-head' }, [
       el('div', { class: 'section-title' }, 'Mes favoris boutique'),
-      el('a', { class: 'link-quiet', href: API.boutique, target: '_blank', rel: 'noopener' }, 'Voir la boutique →'),
+      bindBoutiqueLink(el('a', { class: 'link-quiet', href: API.boutique, target: '_blank', rel: 'noopener' }, 'Voir la boutique →')),
     ]),
   ]);
   const list = el('div', { class: 'row-list' });
@@ -1724,7 +1757,7 @@ function renderOrdersSection(orderRes) {
   const section = el('div', { class: 'section fade-rise fade-rise-3' }, [
     el('div', { class: 'section-head' }, [
       el('div', { class: 'section-title' }, 'Mes commandes boutique'),
-      el('a', { class: 'link-quiet', href: API.boutique, target: '_blank', rel: 'noopener' }, 'Voir la boutique →'),
+      bindBoutiqueLink(el('a', { class: 'link-quiet', href: API.boutique, target: '_blank', rel: 'noopener' }, 'Voir la boutique →')),
     ]),
   ]);
 
