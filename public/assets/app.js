@@ -376,7 +376,7 @@ function renderConnexion(root) {
     ]),
     el('footer', { class: 'app-footer' }, [
       'Un souci pour vous connecter ? Écrivez à ',
-      el('a', { href: 'mailto:fullfightingbons@gmail.com' }, 'fullfightingbons@gmail.com'),
+      el('a', { href: 'mailto:club@americanfullfightingbons.fr' }, 'club@americanfullfightingbons.fr'),
     ]),
   ]);
   root.appendChild(wrap);
@@ -690,7 +690,7 @@ async function renderDashboard(root) {
 
   root.appendChild(el('footer', { class: 'app-footer' }, [
     'Une question sur votre dossier ? Écrivez à ',
-    el('a', { href: 'mailto:fullfightingbons@gmail.com' }, 'fullfightingbons@gmail.com'),
+    el('a', { href: 'mailto:club@americanfullfightingbons.fr' }, 'club@americanfullfightingbons.fr'),
   ]));
 
   // Stages/inscriptions (calendrier) : alimente à la fois le prochain
